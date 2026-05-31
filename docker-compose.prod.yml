@@ -22,12 +22,14 @@ services:
     container_name: paperlessboss_nginx
     restart: always
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "80:80"
+      - "443:443"
     volumes:
       # Mount host Let's Encrypt certificates directly into the Nginx container
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
+      # Mount host static frontend files directly into the Nginx container
+      - /var/www/html:/usr/share/nginx/html:ro
     networks:
       - production-network
     depends_on:

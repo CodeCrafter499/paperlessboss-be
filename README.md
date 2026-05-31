@@ -225,29 +225,21 @@ EMAIL_PASS = your-smtp-app-password
 ENVIRONMENT = production
 ```
 
-#### 4. Deploy the Stack
-Spin up the isolated backend and Nginx reverse proxy containers (Nginx binds to host port **`8080`** for HTTP and **`8443`** for HTTPS to prevent clashes with existing host-level server processes):
+#### 4. Stop Host-Level Web Servers
+To deploy a completely isolated, unified, and self-contained Docker environment that serves **both your static frontend and backend APIs** on ports `80` and `443` in one place:
+
+1. Stop and disable the native host-level Nginx to free up ports `80` and `443`:
+   ```bash
+   sudo systemctl stop nginx
+   sudo systemctl disable nginx
+   ```
+2. The Docker Compose configuration is set up to **automatically mount** your server's static frontend files directly from `/var/www/html` into the container, rendering them instantly.
+
+#### 5. Deploy the Stack
+Spin up the entire unified environment:
 ```bash
 docker compose -f docker-compose.prod.yml up --build -d
 ```
-
-Once running, configure your native host Nginx (which is running on ports 80/443 and serving other websites) to reverse-proxy traffic for `paperlessboss.com` to the Docker Nginx at `8080`/`8443`:
-```nginx
-server {
-    listen 80;
-    server_name paperlessboss.com www.paperlessboss.com;
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-*(Similarly for port 443 with SSL termination on the host Nginx).*
-
-#### 5. Verify Health & Logs
 ```bash
 # Check container status
 docker compose -f docker-compose.prod.yml ps
