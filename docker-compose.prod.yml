@@ -22,8 +22,8 @@ services:
     container_name: paperlessboss_nginx
     restart: always
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "80:80"
+      - "443:443"
     volumes:
       # Mount host Let's Encrypt certificates directly into the Nginx container
       - /etc/letsencrypt:/etc/letsencrypt:ro
