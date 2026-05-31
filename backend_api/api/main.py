@@ -29,18 +29,32 @@ async def lifespan(app: FastAPI):
     await db_manager.close_all()
     print(">>> Shutdown complete!")
 
+# Check if documentation endpoints should be enabled
+show_docs = settings.ENVIRONMENT.lower() == "development"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="A secure asynchronous auth backend featuring OTP email verification and JWT token authorization.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if show_docs else None,
+    redoc_url="/redoc" if show_docs else None,
+    openapi_url="/openapi.json" if show_docs else None
 )
+
+# Allowed production and development origins
+origins = [
+    "https://paperlessboss.com",
+    "https://www.paperlessboss.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -50,6 +64,6 @@ app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Aut
 async def root():
     return {
         "project": settings.PROJECT_NAME,
-        "docs": "/docs",
+        "docs": "/docs" if show_docs else None,
         "status": "online"
     }

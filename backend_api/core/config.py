@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     SMTP_HOST: str = ""
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
+    ENVIRONMENT: str = "production"
 
     def model_post_init(self, __context):
         if self.EMAILS_FROM_EMAIL and self.EMAIL_PASS:
