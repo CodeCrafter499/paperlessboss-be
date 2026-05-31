@@ -169,3 +169,75 @@ docker build -t paperlessboss-be -f backend_api/Dockerfile .
 docker run -d --name paperlessboss_api -p 8000:8000 --env-file .env paperlessboss-be
 ```
 
+---
+
+### 🛡️ Production Deployment (Nginx Reverse Proxy & HTTPS/SSL)
+
+For live production hosting under **`https://paperlessboss.com`**, we have containerized a secure, production-grade Nginx reverse proxy that isolates the FastAPI service on a private Docker bridge network and terminates SSL automatically.
+
+#### 1. Install Docker and Docker Compose on Your Ubuntu Server
+If Docker is not yet installed on your server, run the following setup commands:
+```bash
+# Update and install dependencies
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+
+# Add Docker GPG key
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Setup non-root execution (recommended)
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+#### 2. Obtain Let's Encrypt SSL/TLS Certificates on Host
+The Nginx container is preconfigured to load certificates from the standard host path `/etc/letsencrypt/live/paperlessboss.com/`. Generate them using Certbot standalone:
+```bash
+sudo apt install certbot -y
+sudo certbot certonly --standalone -d paperlessboss.com -d www.paperlessboss.com
+```
+
+#### 3. Configure Production Secrets
+Create or update your `.env` file at the root of the project with your production Supabase database pooler credentials and set the environment to `production`:
+```env
+DB_HOST = aws-1-ap-northeast-2.pooler.supabase.com
+DB_PORT = 5432
+DB_NAME = postgres
+DB_USER = postgres.skzceavurcikyajjtpar
+DB_PASS = your-database-password
+
+EMAILS_FROM_EMAIL = your-email@gmail.com
+EMAIL_PASS = your-smtp-app-password
+
+# CRITICAL: This hides interactive /docs (Swagger) automatically in production
+ENVIRONMENT = production
+```
+
+#### 4. Deploy the Stack
+Spin up the isolated backend and reverse proxy in a single command:
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+#### 5. Verify Health & Logs
+```bash
+# Check container status
+docker compose -f docker-compose.prod.yml ps
+
+# View real-time web server logs
+docker compose -f docker-compose.prod.yml logs -f nginx
+```
+
+
