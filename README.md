@@ -226,10 +226,26 @@ ENVIRONMENT = production
 ```
 
 #### 4. Deploy the Stack
-Spin up the isolated backend and reverse proxy in a single command:
+Spin up the isolated backend and reverse proxy (Nginx binds to host port **`8080`** for HTTP and **`8443`** for HTTPS to prevent clashes with existing host-level server processes):
 ```bash
 docker compose -f docker-compose.prod.yml up --build -d
 ```
+
+Once running, configure your native host Nginx (running on ports 80/443) to reverse-proxy traffic to the Docker Nginx at `8080`/`8443`:
+```nginx
+server {
+    listen 80;
+    server_name paperlessboss.com www.paperlessboss.com;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+*(Similarly for port 443 with SSL termination on the host Nginx).*
 
 #### 5. Verify Health & Logs
 ```bash
