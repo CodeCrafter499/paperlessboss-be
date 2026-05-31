@@ -25,7 +25,10 @@ class Settings(BaseSettings):
             if not self.SMTP_PASSWORD:
                 self.SMTP_PASSWORD = self.EMAIL_PASS
             if not self.SMTP_HOST:
-                self.SMTP_HOST = "smtp.gmail.com"
+                if self.EMAILS_FROM_EMAIL.strip().endswith("@paperlessboss.com"):
+                    self.SMTP_HOST = "smtp.titan.email"
+                else:
+                    self.SMTP_HOST = "smtp.gmail.com"
         if not self.SMTP_PORT:
             self.SMTP_PORT = 587
 
