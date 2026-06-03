@@ -5,6 +5,7 @@ from core.config import settings
 from db.db_connection import DatabaseManager
 from db.models import Base
 from api.v1.auth import router as auth_router
+from api.v1.excel_routes import router as excel_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,6 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
+app.include_router(excel_router)
 
 @app.get("/")
 async def root():
