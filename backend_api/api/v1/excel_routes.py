@@ -170,6 +170,15 @@ async def validate_excel_api(
 
     # 5. Parse and save rows to the database
     try:
+        from sqlalchemy import select
+        from db.models import AuthorisedSignatory
+
+        # Look up current user's signatory profile if they have one
+        signatory = await db.scalar(
+            select(AuthorisedSignatory).filter(AuthorisedSignatory.user_id == current_user.id)
+        )
+        signatory_id = signatory.id if signatory else None
+
         df = pd.read_excel(io.BytesIO(file_bytes))
         
         employees_to_create = []
@@ -204,6 +213,7 @@ async def validate_excel_api(
             
             employee = Employee(
                 company_id=current_user.company_id,
+                authorised_signatory_id=signatory_id,
                 employee_name=emp_name,
                 date_of_birth=dob,
                 father_mother_name=father_mother,

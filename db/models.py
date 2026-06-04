@@ -104,6 +104,12 @@ class Employee(Base):
         nullable=False,
         index=True
     )
+    authorised_signatory_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("authorised_signatories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
 
     # Employee Details
     employee_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -197,6 +203,7 @@ class Employee(Base):
     )
 
     company: Mapped["Company"] = relationship("Company")
+    authorised_signatory: Mapped[Optional["AuthorisedSignatory"]] = relationship("AuthorisedSignatory")
 
 
 
