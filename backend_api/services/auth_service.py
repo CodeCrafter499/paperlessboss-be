@@ -22,6 +22,24 @@ def generate_random_otp() -> str:
 def hash_otp_code(otp: str) -> str:
     return hashlib.sha256(otp.encode("utf-8")).hexdigest()
 
+async def check_otp_cooldown(db: AsyncSession, email: str) -> None:
+    now = datetime.now(IST).replace(tzinfo=None)
+    stmt = (
+        select(OTPVerification)
+        .where(OTPVerification.email == email)
+        .order_by(desc(OTPVerification.created_at))
+    )
+    result = await db.execute(stmt)
+    last_otp = result.scalars().first()
+    if last_otp:
+        elapsed = now - last_otp.created_at
+        if elapsed < timedelta(seconds=60):
+            seconds_left = 60 - int(elapsed.total_seconds())
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {seconds_left} seconds before requesting a new verification code."
+            )
+
 async def register_user(db: AsyncSession, register_data: UserRegister, background_tasks: BackgroundTasks) -> User:
     stmt = select(User).where(User.email == register_data.email)
     result = await db.execute(stmt)
@@ -34,7 +52,9 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
                 detail="A user with this email address is already registered."
             )
         else:
+            await check_otp_cooldown(db, register_data.email)
             existing_user.hashed_password = get_password_hash(register_data.password)
+            existing_user.created_at = datetime.now(IST).replace(tzinfo=None)
             
             stmt_invalidate = (
                 select(OTPVerification)
@@ -66,6 +86,7 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
             background_tasks.add_task(send_otp_email, register_data.email, otp_code)
             return existing_user
         
+    await check_otp_cooldown(db, register_data.email)
     hashed_pwd = get_password_hash(register_data.password)
     new_user = User(
         email=register_data.email,
@@ -103,7 +124,6 @@ async def verify_otp_code(db: AsyncSession, verify_data: VerifyOTP) -> bool:
         .where(
             and_(
                 OTPVerification.email == verify_data.email,
-                OTPVerification.hashed_otp == hashed_input,
                 OTPVerification.is_used == False,
                 OTPVerification.expires_at > now
             )
@@ -117,6 +137,31 @@ async def verify_otp_code(db: AsyncSession, verify_data: VerifyOTP) -> bool:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The verification code is incorrect or has expired."
+        )
+        
+    if otp_record.attempts >= 5:
+        otp_record.is_used = True
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Too many failed verification attempts. Please request a new code."
+        )
+        
+    otp_record.attempts += 1
+    
+    if otp_record.hashed_otp != hashed_input:
+        await db.commit()
+        remaining = 5 - otp_record.attempts
+        if remaining <= 0:
+            otp_record.is_used = True
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Too many failed verification attempts. Please request a new code."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The verification code is incorrect. Attempts remaining: {remaining}"
         )
         
     otp_record.is_used = True
@@ -152,6 +197,8 @@ async def resend_otp_code(db: AsyncSession, email: str, background_tasks: Backgr
             detail="This account is already verified."
         )
         
+    await check_otp_cooldown(db, email)
+    
     stmt_invalidate = (
         select(OTPVerification)
         .where(

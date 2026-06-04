@@ -81,67 +81,28 @@ Launch the development server:
 
 ---
 
-## 📡 API Reference & Flow
+## 📡 API Reference & Detailed Documentation
 
-All endpoints are prefixed with `/api/v1/auth`.
+For a complete, interactive, and detailed guide explaining each API endpoint, request payloads, response structures, sequence flows, and concrete `curl` examples, please read:
+👉 **[Detailed API Documentation Manual](file:///d:/peperless_be/paperlessboss-be/read_me/api-documentation.md)**
 
-### 1. Register User
-* **Endpoint**: `POST /register`
-* **Payload**:
-  ```json
-  {
-    "email": "user@example.com",
-    "password": "SecurePassword123!"
-  }
-  ```
-* **Process**: Checks if user exists. If they exist but are not verified, it updates their password and sends a new OTP. Otherwise, it creates a new user, hashes their password, generates a cryptographically random 6-digit OTP, saves the SHA-256 hash of the OTP to the DB, and dispatches the plaintext code in a styled HTML template to the recipient's mailbox.
-
-### 2. Verify Email OTP
-* **Endpoint**: `POST /verify-otp`
-* **Payload**:
-  ```json
-  {
-    "email": "user@example.com",
-    "otp_code": "123456"
-  }
-  ```
-* **Process**: Hashes the incoming OTP and validates it against the active, unexpired, unused database records. On successful match, it unlocks the user account by setting `is_verified = True`.
-
-### 3. Resend Verification OTP
-* **Endpoint**: `POST /resend-otp`
-* **Payload**:
-  ```json
-  {
-    "email": "user@example.com"
-  }
-  ```
-* **Process**: Invalidates all pending older OTP entries and dispatches a fresh verification code to the recipient.
-
-### 4. User Login
-* **Endpoint**: `POST /login`
-* **Payload**:
-  ```json
-  {
-    "email": "user@example.com",
-    "password": "SecurePassword123!"
-  }
-  ```
-* **Process**: Verifies email, password match, and verified status (`is_verified == True`). On success, generates and returns a secure JWT access token.
-
-### 5. Get Profile
-* **Endpoint**: `GET /me`
-* **Headers**: `Authorization: Bearer <your_jwt_token>`
-* **Process**: Decodes the JWT session token, fetches the associated user profile from the database, and returns the profile details safely.
+For a complete breakdown of the statutory employee records Excel validation engine, exact column headers, formatting tips, and error configurations, please read:
+👉 **[Excel Validation Documentation](file:///d:/peperless_be/paperlessboss-be/read_me/excel-validation.md)**
 
 ---
 
 ## 🧪 Postman & Verification
 
-We have prepared a ready-to-import Postman Collection file at **`postman_collection.json`** in your project root:
+We have prepared ready-to-import Postman Collections in the project repository under:
+* 📥 **Local API Collection**: [postman_collection_local.json](file:///d:/peperless_be/paperlessboss-be/postman_coll/postman_collection_local.json)
+* 📥 **Production API Collection**: [postman_collection_production.json](file:///d:/peperless_be/paperlessboss-be/postman_coll/postman_collection_production.json)
+
+### Quick Start with Postman:
 1. Open Postman and click **Import**.
-2. Drag and drop the **`postman_collection.json`** file.
-3. Once imported, you can run through **Register**, check your email for the OTP code, execute **Verify Email OTP**, and then run **User Login**.
-4. The login request features a built-in Postman test script that automatically extracts and saves the returned access token into the dynamic `{{access_token}}` collection variable, immediately authorizing the secure `Get Profile (Me)` endpoint!
+2. Select either **`postman_collection_local.json`** or **`postman_collection_production.json`**.
+3. Once imported, you can run through **Register**, check your email/logs for the OTP, run **Verify Email OTP**, and then **User Login**.
+4. The **User Login** request features a built-in Postman test script that automatically extracts and saves the returned access token into the dynamic `{{access_token}}` collection variable, immediately authorizing the secure `Get Profile (Me)`, Company Profile, and Authorised Signatory endpoints!
+
 
 ---
 

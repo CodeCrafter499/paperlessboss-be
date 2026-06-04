@@ -67,5 +67,5 @@ async def send_otp_email(email_to: str, otp: str) -> bool:
         return True
         
     except Exception as e:
-        logger.error(f"Failed to send email to {email_to} via SMTP: {e}")
+        logger.exception(f"Failed to send email to {email_to} via SMTP: {e}")
         return False

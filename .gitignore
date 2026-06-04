@@ -89,3 +89,11 @@ tmp/
 
 # uvicorn / reload artifacts (optional)
 *.pid
+
+
+.env*
+backend_api/core/.env
+.env.dev
+.env.local
+.env.local.bak
+.env.production

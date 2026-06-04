@@ -5,7 +5,10 @@ from core.config import settings
 from db.db_connection import DatabaseManager
 from db.models import Base
 from api.v1.auth import router as auth_router
+
 from api.v1.excel_routes import router as excel_router
+from api.v1.profile import router as profile_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,6 +22,12 @@ async def lifespan(app: FastAPI):
     print(">>> Syncing database schemas (Creating tables if missing)...")
     try:
         async with db_manager.engine.begin() as conn:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE otp_verifications ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_gstin ON companies (gstin);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_cin ON companies (cin);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_pan ON companies (pan);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user_id ON refresh_tokens (user_id);"))
             await conn.run_sync(Base.metadata.create_all)
         print(">>> Database initialized and tables synced successfully!")
     except Exception as e:
@@ -61,6 +70,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
 app.include_router(excel_router)
+app.include_router(profile_router, prefix=f"{settings.API_V1_STR}/profile", tags=["Profile"])
 
 @app.get("/")
 async def root():
