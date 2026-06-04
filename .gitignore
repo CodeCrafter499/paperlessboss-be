@@ -81,6 +81,12 @@ logs/
 # Temporary Excel uploads from /validate-excel
 uploads/
 
+# Generated appointment letters (PDF/DOCX + manifest)
+generated_letters/
+
+# Letterhead raster cache
+backend_api/assets/.letterhead_cache/
+
 # Local scratch / test output
 tmp/
 
@@ -89,3 +95,5 @@ tmp/
 
 # uvicorn / reload artifacts (optional)
 *.pid
+
+requirements.txt

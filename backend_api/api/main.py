@@ -6,10 +6,14 @@ from db.db_connection import DatabaseManager
 from db.models import Base
 from api.v1.auth import router as auth_router
 from api.v1.excel_routes import router as excel_router
+from api.v1.offer_letter_routes import router as offer_letter_router
+from services.offer_letter.letterhead import is_letterhead_available
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(">>> Starting up PaperlessBoss Backend...")
+    if not is_letterhead_available():
+        print("[WARNING] Letterhead PDF unavailable — offer letters will use text header fallback.")
     db_manager = DatabaseManager()
     
     is_healthy = await db_manager.ping()
@@ -61,6 +65,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
 app.include_router(excel_router)
+app.include_router(offer_letter_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():
