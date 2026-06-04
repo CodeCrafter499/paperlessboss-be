@@ -140,29 +140,29 @@ class Employee(Base):
     )
 
     # Employment Details
-    designation: Mapped[str] = mapped_column(
+    designation: Mapped[Optional[str]] = mapped_column(
         String(150),
-        nullable=False,
+        nullable=True,
         index=True
     )
-    employment_type: Mapped[str] = mapped_column(
+    employment_type: Mapped[Optional[str]] = mapped_column(
         String(100),
-        nullable=False
+        nullable=True
     )
-    skill_category: Mapped[str] = mapped_column(
+    skill_category: Mapped[Optional[str]] = mapped_column(
         String(100),
-        nullable=False
+        nullable=True
     )
-    date_of_joining: Mapped[date] = mapped_column(
+    date_of_joining: Mapped[Optional[date]] = mapped_column(
         Date,
-        nullable=False,
+        nullable=True,
         index=True
     )
 
     # Monetary Fields
-    basic_pay: Mapped[float] = mapped_column(
+    basic_pay: Mapped[Optional[float]] = mapped_column(
         Numeric(12, 2),
-        nullable=False
+        nullable=True
     )
     dearness_allowance: Mapped[Optional[float]] = mapped_column(
         Numeric(12, 2),
