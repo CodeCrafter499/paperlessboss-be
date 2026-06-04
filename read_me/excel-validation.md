@@ -170,7 +170,7 @@ Excel **Row 1** must use these **exact** column headers:
 | 2 | Date of birth | Yes | Format `dd-mm-yyyy` (e.g. `15-01-1990`) |
 | 3 | Father's / Mother's name | Yes | Only alphabets, spaces, and dot (`.`) |
 | 4 | Aadhaar number | Yes | Exactly 12 numeric digits |
-| 5 | Labour Identification Number (LIN) of the establishment | Yes | Exactly 10 numeric digits |
+| 5 | Labour Identification Number (LIN) of the establishment | Yes | Alphanumeric including any special characters |
 | 6 | Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available) | No | If provided: exactly 12 numeric digits |
 | 7 | Designation | No | Alphabets, spaces, and special characters only (no digits) |
 | 8 | Type of Employment | No | Text — any value accepted if provided |
@@ -192,11 +192,11 @@ Excel **Row 1** must use these **exact** column headers:
 |------|----------|
 | `regex` | Name of employee, Father's / Mother's name |
 | `date` | Date of birth, Date of Joining |
-| `numeric_length` | Aadhaar (12), LIN (10), UAN/ESIC (12) |
+| `numeric_length` | Aadhaar (12), UAN/ESIC (12) |
 | `designation` | Designation |
 | `numeric` | Basic Pay, Dearness Allowance, Other Allowance |
 | `word_limit` | Broad nature of duties performed (max 100 words) |
-| `text` | Type of Employment, Category of Skill, social security, maternity benefits, any other information |
+| `text` | Labour Identification Number (LIN), Type of Employment, Category of Skill, social security, maternity benefits, any other information |
 
 ---
 
@@ -208,7 +208,7 @@ Excel **Row 1** must use these **exact** column headers:
 | Date of birth | date of birth should be in dd-mm-yyyy format |
 | Father's / Mother's name | parent name shouldn't consist special characters except . and space |
 | Aadhaar number | aadhaar number should be 12 digits only numeric |
-| LIN | LIN should be 10 digits only numeric |
+| LIN | `{field name} is required` |
 | UAN/ESIC | UAN/ESIC should be 12 digits only numeric |
 | Designation | designation should contain only alphabets, spaces and special characters |
 | Date of Joining | date of joining should be in dd-mm-yyyy format |

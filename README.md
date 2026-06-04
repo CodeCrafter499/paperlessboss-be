@@ -49,6 +49,9 @@ paperlessboss-be/
     └── test_auth_flow.py # Self-bootstrapping end-to-end integration test flow
 ```
 
+For a visual diagram and in-depth description of the container layout, database connections, and security boundaries:
+👉 **[Detailed Architecture Walkthrough](file:///d:/peperless_be/paperlessboss-be/read_me/architecture-diagram.md)**
+
 ---
 
 ## ⚙️ Setup & Installation

@@ -31,9 +31,8 @@ VALIDATION_RULES = {
 
     "Labour Identification Number (LIN) of the establishment": {
         "required": True,
-        "type": "numeric_length",
-        "length": 10,
-        "message": "LIN should be 10 digits only numeric"
+        "type": "text",
+        "message": ""
     },
 
     "Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available)": {

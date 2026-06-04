@@ -525,7 +525,7 @@ When uploading an Excel sheet, row values are parsed and validated column-by-col
 | **Date of birth** | Yes | Must be in `dd-mm-yyyy` format | *date of birth should be in dd-mm-yyyy format* |
 | **Father's / Mother's name** | Yes | Only alphabets, spaces, and dots (`.`) | *parent name shouldn't consist special characters except . and space* |
 | **Aadhaar number** | Yes | Exactly 12 digits (numeric) | *aadhaar number should be 12 digits only numeric* |
-| **Labour Identification Number (LIN)** | Yes | Exactly 10 digits (numeric) | *LIN should be 10 digits only numeric* |
+| **Labour Identification Number (LIN)** | Yes | Alphanumeric including any special characters | *Labour Identification Number (LIN) of the establishment is required* |
 | **UAN / ESIC** | No | If provided, exactly 12 digits (numeric) | *UAN/ESIC should be 12 digits only numeric* |
 | **Designation** | No | No digits allowed (alphabets, spaces, and punctuation only) | *designation should contain only alphabets, spaces and special characters* |
 | **Basic Pay** | No | Must be a valid positive number | *basic pay should be a numeric value* |
