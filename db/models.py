@@ -204,48 +204,49 @@ class Employee(Base):
 class StorageMapping(Base):
     __tablename__ = "storage_mapping"
 
-    id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4
     )
 
-    authorised_signatory_id = Column(
+    authorised_signatory_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("authorised_signatories.id", ondelete="CASCADE"),
         nullable=False
     )
 
-    company_id = Column(
+    company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False
     )
 
-    employee_id = Column(
+    employee_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("employees.id", ondelete="CASCADE"),
         nullable=False
     )
 
-    document_type = Column(
+    document_type: Mapped[str] = mapped_column(
         String(100),
         nullable=False
     )
 
-    storage_file_location = Column(
+    storage_file_location: Mapped[str] = mapped_column(
         Text,
         nullable=False
     )
 
-    created_at = Column(
-        TIMESTAMP,
-        server_default=func.now(),
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(IST).replace(tzinfo=None),
         nullable=False
     )
 
-    updated_at = Column(
-        TIMESTAMP,
-        server_default=func.now(),
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(IST).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(IST).replace(tzinfo=None),
         nullable=False
     )
