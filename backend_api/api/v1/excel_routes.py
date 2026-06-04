@@ -180,13 +180,12 @@ async def validate_excel_api(
             dob = parse_date_value(row_dict.get("Date of birth"))
             father_mother = excel_value_to_str(row_dict.get("Father's / Mother's name", ""))
             
-            aadhaar_val = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12)
-            aadhaar_number = int(aadhaar_val) if aadhaar_val.isdigit() else None
+            aadhaar_number = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12) or None
             
             lin_number = excel_value_to_str(row_dict.get("Labour Identification Number (LIN) of the establishment", ""))
             
             uan_val = normalize_numeric_id(row_dict.get("Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available)", ""), 12)
-            uan_number = int(uan_val) if uan_val.isdigit() else None
+            uan_number = uan_val if uan_val else None
             
             designation = excel_value_to_str(row_dict.get("Designation", "")) or None
             employment_type = excel_value_to_str(row_dict.get("Type of Employment", "")) or None

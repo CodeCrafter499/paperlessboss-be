@@ -111,10 +111,10 @@ class Employee(Base):
     father_mother_name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     # Aadhaar Number - 12 digits
-    aadhaar_number: Mapped[int] = mapped_column(
-        BigInteger,
+    aadhaar_number: Mapped[str] = mapped_column(
+        String(12),
         CheckConstraint(
-            "aadhaar_number >= 100000000000 AND aadhaar_number <= 999999999999",
+            "aadhaar_number ~ '^[0-9]{12}$'",
             name="chk_aadhaar_12_digits"
         ),
         unique=True,
@@ -123,16 +123,15 @@ class Employee(Base):
 
     # LIN Number - Alphanumeric (allows characters & special symbols)
     lin_number: Mapped[str] = mapped_column(
-        String(12),
-        unique=True,
+        String(100),
         nullable=False
     )
 
     # UAN / ESIC Number - 12 digits (matches the 12-digit Excel validator constraint)
-    uan_esic_number: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
+    uan_esic_number: Mapped[Optional[str]] = mapped_column(
+        String(12),
         CheckConstraint(
-            "uan_esic_number >= 100000000000 AND uan_esic_number <= 999999999999",
+            "uan_esic_number ~ '^[0-9]{12}$'",
             name="chk_uan_esic_12_digits"
         ),
         unique=True,
