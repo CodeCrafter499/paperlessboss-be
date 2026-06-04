@@ -236,19 +236,8 @@ async def validate_excel_api(
             detail=f"Excel validated successfully, but failed to save records to database: {str(db_err)}"
         )
 
-    # Create a unique filename to avoid duplicates
-    unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
-    content_type = file.content_type or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-    # Upload to Supabase Storage
-    upload_to_supabase(file_bytes, unique_filename, content_type)
-
-    # Generate a signed URL for secure access
-    signed_url = get_supabase_signed_url(unique_filename)
-
     return {
-        "message": "Excel validated, stored, and imported successfully.",
-        "storage_url": signed_url,
+        "message": "Excel validated and employees imported successfully.",
         "validation_result": result
     }
 
