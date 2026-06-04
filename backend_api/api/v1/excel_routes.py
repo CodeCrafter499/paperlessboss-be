@@ -181,7 +181,21 @@ async def validate_excel_api(
 
         df = pd.read_excel(io.BytesIO(file_bytes))
         
-        employees_to_create = []
+        # Collect all unique Aadhaar numbers to query existing employees in one go
+        aadhaar_list = []
+        for index, row_data in df.iterrows():
+            row_dict = row_data.to_dict()
+            aadhaar_val = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12)
+            if aadhaar_val:
+                aadhaar_list.append(aadhaar_val)
+                
+        existing_employees = {}
+        if aadhaar_list:
+            existing_query = select(Employee).filter(Employee.aadhaar_number.in_(aadhaar_list))
+            res = await db.scalars(existing_query)
+            existing_employees = {emp.aadhaar_number: emp for emp in res.all()}
+
+        employees_to_add = []
         for index, row_data in df.iterrows():
             row_dict = row_data.to_dict()
             
@@ -211,30 +225,54 @@ async def validate_excel_api(
             benefits_chapter_vi = excel_value_to_str(row_dict.get("Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee)", "")) or None
             other_info = excel_value_to_str(row_dict.get("Any other information", "")) or None
             
-            employee = Employee(
-                company_id=current_user.company_id,
-                authorised_signatory_id=signatory_id,
-                employee_name=emp_name,
-                date_of_birth=dob,
-                father_mother_name=father_mother,
-                aadhaar_number=aadhaar_number,
-                lin_number=lin_number,
-                uan_esic_number=uan_number,
-                designation=designation,
-                employment_type=employment_type,
-                skill_category=skill_category,
-                date_of_joining=doj,
-                basic_pay=basic_pay,
-                dearness_allowance=dearness_allowance,
-                other_allowance=other_allowance,
-                social_security_benefits=social_security,
-                duties_performed=duties,
-                benefits_under_chapter_vi=benefits_chapter_vi,
-                other_information=other_info
-            )
-            employees_to_create.append(employee)
+            if aadhaar_number in existing_employees:
+                # Update existing record
+                employee = existing_employees[aadhaar_number]
+                employee.company_id = current_user.company_id
+                employee.authorised_signatory_id = signatory_id
+                employee.employee_name = emp_name
+                employee.date_of_birth = dob
+                employee.father_mother_name = father_mother
+                employee.lin_number = lin_number
+                employee.uan_esic_number = uan_number
+                employee.designation = designation
+                employee.employment_type = employment_type
+                employee.skill_category = skill_category
+                employee.date_of_joining = doj
+                employee.basic_pay = basic_pay
+                employee.dearness_allowance = dearness_allowance
+                employee.other_allowance = other_allowance
+                employee.social_security_benefits = social_security
+                employee.duties_performed = duties
+                employee.benefits_under_chapter_vi = benefits_chapter_vi
+                employee.other_information = other_info
+            else:
+                # Create new record
+                employee = Employee(
+                    company_id=current_user.company_id,
+                    authorised_signatory_id=signatory_id,
+                    employee_name=emp_name,
+                    date_of_birth=dob,
+                    father_mother_name=father_mother,
+                    aadhaar_number=aadhaar_number,
+                    lin_number=lin_number,
+                    uan_esic_number=uan_number,
+                    designation=designation,
+                    employment_type=employment_type,
+                    skill_category=skill_category,
+                    date_of_joining=doj,
+                    basic_pay=basic_pay,
+                    dearness_allowance=dearness_allowance,
+                    other_allowance=other_allowance,
+                    social_security_benefits=social_security,
+                    duties_performed=duties,
+                    benefits_under_chapter_vi=benefits_chapter_vi,
+                    other_information=other_info
+                )
+                employees_to_add.append(employee)
             
-        db.add_all(employees_to_create)
+        if employees_to_add:
+            db.add_all(employees_to_add)
         await db.commit()
         
     except Exception as db_err:
