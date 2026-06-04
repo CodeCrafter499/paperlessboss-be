@@ -1,8 +1,8 @@
 from __future__ import annotations
 import uuid
 from typing import Optional
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from datetime import datetime, timezone, timedelta, date
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, BigInteger, CheckConstraint, Numeric, Text, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -94,3 +94,158 @@ class RefreshToken(Base):
     user: Mapped["User"] = relationship("User")
 
 
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        ForeignKey("companies.id", ondelete="CASCADE"), 
+        nullable=False,
+        index=True
+    )
+
+    # Employee Details
+    employee_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    date_of_birth: Mapped[date] = mapped_column(Date, nullable=False)
+    father_mother_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Aadhaar Number - 12 digits
+    aadhaar_number: Mapped[int] = mapped_column(
+        BigInteger,
+        CheckConstraint(
+            "aadhaar_number >= 100000000000 AND aadhaar_number <= 999999999999",
+            name="chk_aadhaar_12_digits"
+        ),
+        unique=True,
+        nullable=False
+    )
+
+    # LIN Number - Alphanumeric (allows characters & special symbols)
+    lin_number: Mapped[str] = mapped_column(
+        String(12),
+        unique=True,
+        nullable=False
+    )
+
+    # UAN / ESIC Number - 12 digits (matches the 12-digit Excel validator constraint)
+    uan_esic_number: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        CheckConstraint(
+            "uan_esic_number >= 100000000000 AND uan_esic_number <= 999999999999",
+            name="chk_uan_esic_12_digits"
+        ),
+        unique=True,
+        nullable=True
+    )
+
+    # Employment Details
+    designation: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+        index=True
+    )
+    employment_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    skill_category: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    date_of_joining: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        index=True
+    )
+
+    # Monetary Fields
+    basic_pay: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        nullable=False
+    )
+    dearness_allowance: Mapped[Optional[float]] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+    other_allowance: Mapped[Optional[float]] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    social_security_benefits: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    duties_performed: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    benefits_under_chapter_vi: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    other_information: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(IST).replace(tzinfo=None), 
+        onupdate=lambda: datetime.now(IST).replace(tzinfo=None)
+    )
+
+    company: Mapped["Company"] = relationship("Company")
+
+
+
+class StorageMapping(Base):
+    __tablename__ = "storage_mapping"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+
+    authorised_signatory_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("authorised_signatories.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    company_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    employee_id = Column(
+        Integer,
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    document_type = Column(
+        String(100),
+        nullable=False
+    )
+
+    storage_file_location = Column(
+        Text,
+        nullable=False
+    )
+
+    created_at = Column(
+        TIMESTAMP,
+        server_default=func.now(),
+        nullable=False
+    )
+
+    updated_at = Column(
+        TIMESTAMP,
+        server_default=func.now(),
+        nullable=False
+    )
