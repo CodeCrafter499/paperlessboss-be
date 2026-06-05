@@ -294,6 +294,47 @@
             },
             "description": "Upserts Authorised Signatory profile."
           }
+        },
+        {
+          "name": "Upload Company Letterhead",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/company/letterhead",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "company",
+                "letterhead"
+              ]
+            },
+            "description": "Uploads a PDF company letterhead template, saves it to Supabase Storage, and maps it in the storage_mapping table."
+          }
         }
       ]
     },
@@ -331,6 +372,149 @@
               "path": ["validate-excel"]
             },
             "description": "Uploads and validates a statutory employee records Excel sheet, saving it to a private Supabase bucket and returning a 15-minute secure signed URL on success."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Offer Letters",
+      "item": [
+        {
+          "name": "Generate Offer Letters",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/generate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "generate"
+              ]
+            },
+            "description": "Generates offer letters (PDF and DOCX) for all employees linked to the company."
+          }
+        },
+        {
+          "name": "Get Offer Letters Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "status"
+              ]
+            },
+            "description": "Gets the generation status and download links of offer letters for all employees in a company."
+          }
+        },
+        {
+          "name": "Download Offer Letter PDF",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/download/:employee_id/pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "download",
+                ":employee_id",
+                "pdf"
+              ],
+              "variable": [
+                {
+                  "key": "employee_id",
+                  "value": "",
+                  "description": "The integer ID of the employee."
+                }
+              ]
+            },
+            "description": "Downloads the generated offer letter PDF for a specific employee."
+          }
+        },
+        {
+          "name": "Download Offer Letter DOCX",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/download/:employee_id/docx",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "download",
+                ":employee_id",
+                "docx"
+              ],
+              "variable": [
+                {
+                  "key": "employee_id",
+                  "value": "",
+                  "description": "The integer ID of the employee."
+                }
+              ]
+            },
+            "description": "Downloads the generated offer letter DOCX for a specific employee."
           }
         }
       ]

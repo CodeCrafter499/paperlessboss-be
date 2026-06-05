@@ -533,3 +533,123 @@ When uploading an Excel sheet, row values are parsed and validated column-by-col
 | **Other Allowance** | No | Must be a valid positive number | *other allowance should be a numeric value* |
 | **Broad nature of duties** | No | Word count cannot exceed 100 words | *text should not exceed 100 words* |
 | **Date of Joining** | No | Must be in `dd-mm-yyyy` format if provided | *date of joining should be in dd-mm-yyyy format* |
+
+
+---
+
+### 5. Offer Letters & Letterhead
+
+This section covers letterhead upload and generating, tracking status, and downloading appointment letters.
+
+#### Upload Company Letterhead
+* **Method**: `POST`
+* **Path**: `/api/v1/profile/company/letterhead`
+* **Auth**: Bearer Authorization (`Authorization: Bearer <access_token>`).
+* **Request Content-Type**: `multipart/form-data`
+* **Request Body**:
+  * `file`: (Binary PDF letterhead file upload)
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "message": "Company letterhead uploaded and processed successfully."
+  }
+  ```
+* **Curl Example**:
+  ```bash
+  curl -X POST http://localhost:8000/api/v1/profile/company/letterhead \
+       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+       -F "file=@/path/to/letterhead.pdf"
+  ```
+
+---
+
+#### Generate Offer Letters
+* **Method**: `POST`
+* **Path**: `/api/v1/offer-letters/generate`
+* **Auth**: Bearer Authorization (`Authorization: Bearer <access_token>`).
+* **Description**: Generates high-quality vector offer letters (both PDF and DOCX) for all employees associated with the logged-in user's company. If a custom letterhead was uploaded, it is automatically overlaid onto the document.
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "company_id": "550e8400-e29b-41d4-a716-446655440000",
+    "total_employees": 3,
+    "generated": 3,
+    "already_existed": 0,
+    "results": [
+      {
+        "employee_id": 1,
+        "employee_name": "John Doe",
+        "status": "generated",
+        "pdf_url": "/offer-letters/download/1/pdf",
+        "docx_url": "/offer-letters/download/1/docx"
+      }
+    ]
+  }
+  ```
+* **Error Responses**:
+  * `400 Bad Request` if the logged-in user is not associated with any company profile.
+  * `404 Not Found` if no employees are found for the company.
+* **Curl Example**:
+  ```bash
+  curl -X POST http://localhost:8000/api/v1/offer-letters/generate \
+       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  ```
+
+---
+
+#### Get Offer Letters Status
+* **Method**: `GET`
+* **Path**: `/api/v1/offer-letters/status`
+* **Auth**: Bearer Authorization (`Authorization: Bearer <access_token>`).
+* **Description**: Checks the generation status and retrieves download URLs of the PDF and DOCX files for all employees in the company.
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "company_id": "550e8400-e29b-41d4-a716-446655440000",
+    "total_employees": 3,
+    "ready_count": 3,
+    "employees": [
+      {
+        "employee_id": 1,
+        "employee_name": "John Doe",
+        "ready": true,
+        "pdf_url": "/offer-letters/download/1/pdf",
+        "docx_url": "/offer-letters/download/1/docx",
+        "generated_at": "2026-06-05T12:00:00.000000"
+      }
+    ]
+  }
+  ```
+* **Curl Example**:
+  ```bash
+  curl -X GET http://localhost:8000/api/v1/offer-letters/status \
+       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  ```
+
+---
+
+#### Download Offer Letter PDF
+* **Method**: `GET`
+* **Path**: `/api/v1/offer-letters/download/{employee_id}/pdf`
+* **Auth**: Bearer Authorization (`Authorization: Bearer <access_token>`).
+* **Response**: Binary PDF file stream with `Content-Disposition` header.
+* **Curl Example**:
+  ```bash
+  curl -X GET http://localhost:8000/api/v1/offer-letters/download/1/pdf \
+       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+       --output Appointment_Letter_John_Doe.pdf
+  ```
+
+---
+
+#### Download Offer Letter DOCX
+* **Method**: `GET`
+* **Path**: `/api/v1/offer-letters/download/{employee_id}/docx`
+* **Auth**: Bearer Authorization (`Authorization: Bearer <access_token>`).
+* **Response**: Binary DOCX file stream with `Content-Disposition` header.
+* **Curl Example**:
+  ```bash
+  curl -X GET http://localhost:8000/api/v1/offer-letters/download/1/docx \
+       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+       --output Appointment_Letter_John_Doe.docx
+  ```

@@ -228,10 +228,10 @@ class StorageMapping(Base):
         nullable=False
     )
 
-    employee_id: Mapped[int] = mapped_column(
+    employee_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("employees.id", ondelete="CASCADE"),
-        nullable=False
+        nullable=True
     )
 
     document_type: Mapped[str] = mapped_column(
@@ -256,3 +256,23 @@ class StorageMapping(Base):
         onupdate=lambda: datetime.now(IST).replace(tzinfo=None),
         nullable=False
     )
+
+
+class OfferLetter(Base):
+    __tablename__ = "offer_letters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    employee_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    docx_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None)
+    )
+
+    employee: Mapped[Employee] = relationship("Employee")
+

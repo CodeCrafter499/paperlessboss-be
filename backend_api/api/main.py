@@ -7,6 +7,8 @@ from db.models import Base
 from api.v1.auth import router as auth_router
 
 from api.v1.excel_routes import router as excel_router
+from api.v1.offer_letter_routes import router as offer_letter_router
+from services.offer_letter.letterhead import is_letterhead_available
 from api.v1.profile import router as profile_router
 
 
@@ -29,6 +31,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_pan ON companies (pan);"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user_id ON refresh_tokens (user_id);"))
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;"))
         print(">>> Database initialized and tables synced successfully!")
     except Exception as e:
         print(f"[FATAL] Failed to sync database tables on startup: {e}")
@@ -71,6 +74,8 @@ app.add_middleware(
 app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
 app.include_router(excel_router)
 app.include_router(profile_router, prefix=f"{settings.API_V1_STR}/profile", tags=["Profile"])
+app.include_router(offer_letter_router, prefix=settings.API_V1_STR)
+
 
 @app.get("/")
 async def root():

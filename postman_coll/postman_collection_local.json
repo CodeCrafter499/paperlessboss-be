@@ -187,6 +187,21 @@
       "item": [
         {
           "name": "Get Company Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.id) {",
+                  "    pm.collectionVariables.set(\"company_id\", jsonData.id);",
+                  "    console.log(\"Saved Company ID to Collection Variables: \" + jsonData.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "bearer",
@@ -202,14 +217,36 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/api/v1/profile/company",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "profile", "company"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "company"
+              ]
             },
             "description": "Gets Company profile of authenticated user."
           }
         },
         {
           "name": "Create or Update Company Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.id) {",
+                  "    pm.collectionVariables.set(\"company_id\", jsonData.id);",
+                  "    console.log(\"Saved Company ID to Collection Variables: \" + jsonData.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "bearer",
@@ -234,8 +271,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/profile/company",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "profile", "company"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "company"
+              ]
             },
             "description": "Upserts Company profile with controls: PAN must match indices 3-12 of GSTIN."
           }
@@ -294,6 +338,47 @@
             },
             "description": "Upserts Authorised Signatory profile."
           }
+        },
+        {
+          "name": "Upload Company Letterhead",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/company/letterhead",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "company",
+                "letterhead"
+              ]
+            },
+            "description": "Uploads a PDF company letterhead template, saves it to Supabase Storage, and maps it in the storage_mapping table."
+          }
         }
       ]
     },
@@ -334,6 +419,149 @@
           }
         }
       ]
+    },
+    {
+      "name": "Offer Letters",
+      "item": [
+        {
+          "name": "Generate Offer Letters",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/generate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "generate"
+              ]
+            },
+            "description": "Generates offer letters (PDF and DOCX) for all employees linked to the company."
+          }
+        },
+        {
+          "name": "Get Offer Letters Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "status"
+              ]
+            },
+            "description": "Gets the generation status and download links of offer letters for all employees in a company."
+          }
+        },
+        {
+          "name": "Download Offer Letter PDF",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/download/:employee_id/pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "download",
+                ":employee_id",
+                "pdf"
+              ],
+              "variable": [
+                {
+                  "key": "employee_id",
+                  "value": "",
+                  "description": "The integer ID of the employee."
+                }
+              ]
+            },
+            "description": "Downloads the generated offer letter PDF for a specific employee."
+          }
+        },
+        {
+          "name": "Download Offer Letter DOCX",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/offer-letters/download/:employee_id/docx",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offer-letters",
+                "download",
+                ":employee_id",
+                "docx"
+              ],
+              "variable": [
+                {
+                  "key": "employee_id",
+                  "value": "",
+                  "description": "The integer ID of the employee."
+                }
+              ]
+            },
+            "description": "Downloads the generated offer letter DOCX for a specific employee."
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -344,6 +572,11 @@
     },
     {
       "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "company_id",
       "value": "",
       "type": "string"
     }
