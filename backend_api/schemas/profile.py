@@ -1,0 +1,97 @@
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Annotated, Optional
+from pydantic import BaseModel, EmailStr, Field, model_validator, PlainSerializer
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def ensure_ist(v: datetime) -> datetime:
+    if v is None:
+        return v
+    if v.tzinfo is None:
+        return v.replace(tzinfo=IST)
+    return v.astimezone(IST)
+
+ISTDateTime = Annotated[
+    datetime,
+    PlainSerializer(lambda v: ensure_ist(v).isoformat(), return_type=str)
+]
+
+class CompanyBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Name of the Company")
+    address: Optional[str] = Field(None, max_length=1000, description="Address of the Company")
+    gstin: Optional[str] = Field(
+        None, 
+        pattern=r"^\d{2}[A-Za-z]{5}\d{4}[A-Za-z]{1}[A-Za-z0-9]{3}$",
+        description="15-character GSTIN"
+    )
+    pan: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z]{5}\d{4}[A-Za-z]{1}$",
+        description="10-character PAN"
+    )
+    cin: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z0-9]{21}$",
+        description="21-character CIN"
+    )
+    labour_identification_number: Optional[str] = Field(None, max_length=255)
+    email: Optional[EmailStr] = None
+    mobile_no: Optional[str] = Field(None, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_gstin_pan_match(self) -> "CompanyBase":
+        if self.gstin and self.pan:
+            extracted_pan = self.gstin[2:12].upper()
+            if self.pan.upper() != extracted_pan:
+                raise ValueError(
+                    f"PAN ({self.pan.upper()}) does not match the 3rd to 12th characters of GSTIN ({extracted_pan})"
+                )
+        elif self.gstin and not self.pan:
+            # Auto-extract PAN from GSTIN if PAN is not provided
+            self.pan = self.gstin[2:12].upper()
+        return self
+
+class CompanyCreate(CompanyBase):
+    pass
+
+class CompanyUpdate(CompanyBase):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+
+class CompanyOut(CompanyBase):
+    id: uuid.UUID
+    created_at: ISTDateTime
+    updated_at: ISTDateTime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class SignatoryBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    address: Optional[str] = Field(None, max_length=1000)
+    pan: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z]{5}\d{4}[A-Za-z]{1}$",
+        description="10-character PAN of the Authorised Signatory"
+    )
+    email: Optional[EmailStr] = None
+    mobile_no: Optional[str] = Field(None, max_length=20)
+
+class SignatoryCreate(SignatoryBase):
+    pass
+
+class SignatoryUpdate(SignatoryBase):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+
+class SignatoryOut(SignatoryBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    created_at: ISTDateTime
+    updated_at: ISTDateTime
+
+    model_config = {
+        "from_attributes": True
+    }
+

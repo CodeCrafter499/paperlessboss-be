@@ -1,0 +1,81 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from core.config import settings
+from db.db_connection import DatabaseManager
+from db.models import Base
+from api.v1.auth import router as auth_router
+
+from api.v1.excel_routes import router as excel_router
+from api.v1.profile import router as profile_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print(">>> Starting up PaperlessBoss Backend...")
+    db_manager = DatabaseManager()
+    
+    is_healthy = await db_manager.ping()
+    if not is_healthy:
+        print("[WARNING] Database ping failed. Verify that connection credentials are correct.")
+    
+    print(">>> Syncing database schemas (Creating tables if missing)...")
+    try:
+        async with db_manager.engine.begin() as conn:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE otp_verifications ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_gstin ON companies (gstin);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_cin ON companies (cin);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_companies_pan ON companies (pan);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user_id ON refresh_tokens (user_id);"))
+            await conn.run_sync(Base.metadata.create_all)
+        print(">>> Database initialized and tables synced successfully!")
+    except Exception as e:
+        print(f"[FATAL] Failed to sync database tables on startup: {e}")
+        
+    yield
+    
+    print(">>> Disposing of database connection pool...")
+    await db_manager.close_all()
+    print(">>> Shutdown complete!")
+
+# Check if documentation endpoints should be enabled
+show_docs = settings.ENVIRONMENT.lower() == "development"
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    description="A secure asynchronous auth backend featuring OTP email verification and JWT token authorization.",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if show_docs else None,
+    redoc_url="/redoc" if show_docs else None,
+    openapi_url="/openapi.json" if show_docs else None
+)
+
+# Allowed production and development origins
+origins = [
+    "https://paperlessboss.com",
+    "https://www.paperlessboss.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
+app.include_router(excel_router)
+app.include_router(profile_router, prefix=f"{settings.API_V1_STR}/profile", tags=["Profile"])
+
+@app.get("/")
+async def root():
+    return {
+        "project": settings.PROJECT_NAME,
+        "docs": "/docs" if show_docs else None,
+        "status": "online"
+    }

@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend_api/Dockerfile
+    container_name: paperlessboss_api
+    restart: always
+    env_file:
+      - .env
+    networks:
+      - production-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: paperlessboss_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Mount host Let's Encrypt certificates directly into the Nginx container
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+      # Mount host static frontend files directly into the Nginx container
+      - /var/www/html:/usr/share/nginx/html:ro
+    networks:
+      - production-network
+    depends_on:
+      - api
+
+networks:
+  production-network:
+    driver: bridge
