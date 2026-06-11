@@ -48,14 +48,6 @@ class GeneratedLetterLogItem(BaseModel):
     employee_id: Optional[int] = None
     company_id: Optional[uuid.UUID] = None
 
-class LogGenerationRequest(BaseModel):
-    logs: list[GeneratedLetterLogItem]
-
-class LogGenerationResponse(BaseModel):
-    success: bool
-    count: int
-    logs: list[GeneratedLetterLogResponseItem] = []
-
 class GeneratedLetterLogResponseItem(BaseModel):
     id: uuid.UUID
     employee_id: Optional[int] = None
@@ -73,6 +65,14 @@ class GeneratedLetterLogResponseItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+class LogGenerationRequest(BaseModel):
+    logs: list[GeneratedLetterLogItem]
+
+class LogGenerationResponse(BaseModel):
+    success: bool
+    count: int
+    logs: list[GeneratedLetterLogResponseItem] = []
 
 class GenerationHistoryResponse(BaseModel):
     unique_employees_count: int
