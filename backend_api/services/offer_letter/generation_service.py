@@ -37,6 +37,14 @@ async def generate_letters_for_company(
     company_id: uuid.UUID,
 ) -> GenerateOfferLettersResponse:
     employees = await get_employees_by_company(db, company_id)
+    
+    # Load all existing offer letters for this company in a single batch query
+    from sqlalchemy import select
+    from services.offer_letter.tables import OfferLetter
+    stmt = select(OfferLetter).where(OfferLetter.company_id == company_id)
+    res_letters = await db.execute(stmt)
+    existing_letters = {ol.employee_id: ol for ol in res_letters.scalars().all()}
+
     results: list[EmployeeLetterResult] = []
     generated_count = 0
     existed_count = 0
@@ -46,7 +54,7 @@ async def generate_letters_for_company(
     try:
         for employee in employees:
             try:
-                existing = await get_offer_letter_by_employee(db, employee.id)
+                existing = existing_letters.get(employee.id)
                 if existing and paths_exist(existing.pdf_path, existing.docx_path):
                     existed_count += 1
                     results.append(
@@ -84,13 +92,23 @@ async def generate_letters_for_company(
                     generate_appointment_pdf(employee, pdf_path)
                     generate_appointment_docx(employee, docx_path)
 
-                await upsert_offer_letter(
-                    db,
-                    employee_id=employee.id,
-                    company_id=company_id,
-                    pdf_path=str(pdf_path),
-                    docx_path=str(docx_path),
-                )
+                from services.offer_letter.tables import IST
+                from datetime import datetime
+                now = datetime.now(IST).replace(tzinfo=None)
+                if existing:
+                    existing.pdf_path = str(pdf_path)
+                    existing.docx_path = str(docx_path)
+                    existing.generated_at = now
+                else:
+                    new_letter = OfferLetter(
+                        employee_id=employee.id,
+                        company_id=company_id,
+                        pdf_path=str(pdf_path),
+                        docx_path=str(docx_path),
+                        generated_at=now,
+                    )
+                    db.add(new_letter)
+                    existing_letters[employee.id] = new_letter
 
                 generated_count += 1
                 results.append(
@@ -112,6 +130,20 @@ async def generate_letters_for_company(
                         error=str(exc),
                     )
                 )
+        
+        # Batch commit all inserts and updates in a single transaction
+        if generated_count > 0:
+            try:
+                await db.commit()
+            except Exception as commit_exc:
+                logger.error("Failed to commit generated offer letters to database: %s", commit_exc)
+                await db.rollback()
+                for r in results:
+                    if r.status == "generated":
+                        r.status = "failed"
+                        r.error = f"Database save failed: {str(commit_exc)}"
+                generated_count = 0
+
     finally:
         for lh in letterheads_cache.values():
             if lh:
@@ -131,11 +163,19 @@ async def get_company_letter_status(
     company_id: uuid.UUID,
 ) -> OfferLetterStatusResponse:
     employees = await get_employees_by_company(db, company_id)
+    
+    # Fetch all existing offer letters for this company in a single batch query
+    from sqlalchemy import select
+    from services.offer_letter.tables import OfferLetter
+    stmt = select(OfferLetter).where(OfferLetter.company_id == company_id)
+    res_letters = await db.execute(stmt)
+    existing_letters = {ol.employee_id: ol for ol in res_letters.scalars().all()}
+
     statuses: list[EmployeeLetterStatus] = []
     ready_count = 0
 
     for employee in employees:
-        record = await get_offer_letter_by_employee(db, employee.id)
+        record = existing_letters.get(employee.id)
         ready = bool(record and paths_exist(record.pdf_path, record.docx_path))
         if ready:
             ready_count += 1

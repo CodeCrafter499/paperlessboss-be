@@ -35,3 +35,46 @@ class OfferLetterStatusResponse(BaseModel):
     total_employees: int
     ready_count: int
     employees: list[EmployeeLetterStatus]
+
+
+from datetime import date, datetime
+
+class GeneratedLetterLogItem(BaseModel):
+    employee_name: str
+    lin_number: str
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+    format: str
+    employee_id: Optional[int] = None
+    company_id: Optional[uuid.UUID] = None
+
+class LogGenerationRequest(BaseModel):
+    logs: list[GeneratedLetterLogItem]
+
+class LogGenerationResponse(BaseModel):
+    success: bool
+    count: int
+    logs: list[GeneratedLetterLogResponseItem] = []
+
+class GeneratedLetterLogResponseItem(BaseModel):
+    id: uuid.UUID
+    employee_id: Optional[int] = None
+    company_id: Optional[uuid.UUID] = None
+    employee_name: str
+    lin_number: str
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+    format: str
+    downloaded: bool
+    downloaded_at: Optional[datetime] = None
+    downloaded_by: Optional[uuid.UUID] = None
+    downloaded_by_email: Optional[str] = None
+    generated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class GenerationHistoryResponse(BaseModel):
+    unique_employees_count: int
+    logs: list[GeneratedLetterLogResponseItem]
+

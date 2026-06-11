@@ -275,4 +275,26 @@ class OfferLetter(Base):
     )
 
     employee: Mapped[Employee] = relationship("Employee")
+
+
+class GeneratedLetterLog(Base):
+    __tablename__ = "generated_letter_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    company_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)
+    employee_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lin_number: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    date_of_joining: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    format: Mapped[str] = mapped_column(String(50), nullable=False)  # 'docx', 'pdf', 'both'
+    downloaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    downloaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    downloaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    downloaded_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[downloaded_by])
+
 

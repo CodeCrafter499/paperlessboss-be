@@ -154,15 +154,9 @@ async def validate_excel_api(
             detail=f"Could not parse Excel file: {str(e)}"
         )
 
-    # 3. If validation fails, raise 400 with the validation errors list
+    # 3. If validation fails, return the validation result directly
     if not result["success"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": "Excel validation failed. File has not been saved.",
-                "validation_result": result
-            }
-        )
+        return result
 
     # 4. If validation is successful, seek to beginning and read bytes for storage upload
     await file.seek(0)
@@ -283,10 +277,7 @@ async def validate_excel_api(
             detail=f"Excel validated successfully, but failed to save records to database: {str(db_err)}"
         )
 
-    return {
-        "message": "Excel validated and employees imported successfully.",
-        "validation_result": result
-    }
+    return result
 
 
 
