@@ -1,6 +1,7 @@
 import logging
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
