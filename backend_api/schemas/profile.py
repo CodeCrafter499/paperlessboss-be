@@ -53,9 +53,18 @@ class CompanyBase(BaseModel):
         return self
 
 class CompanyCreate(CompanyBase):
-    pass
+    labour_identification_number: Optional[str] = Field(
+        None,
+        pattern=r"^\d{10}$",
+        description="10-digit Labour Identification Number"
+    )
+    mobile_no: Optional[str] = Field(
+        None,
+        pattern=r"^\d{10}$",
+        description="10-digit Mobile Number"
+    )
 
-class CompanyUpdate(CompanyBase):
+class CompanyUpdate(CompanyCreate):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
 
 class CompanyOut(CompanyBase):
@@ -80,14 +89,44 @@ class SignatoryBase(BaseModel):
     mobile_no: Optional[str] = Field(None, max_length=20)
 
 class SignatoryCreate(SignatoryBase):
-    pass
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z.\s]+$",
+        description="Name of the Authorised Signatory (alphabets, dots, spaces only)"
+    )
+    mobile_no: Optional[str] = Field(
+        None,
+        pattern=r"^\d{10}$",
+        description="10-digit Mobile Number of the Authorised Signatory"
+    )
 
-class SignatoryUpdate(SignatoryBase):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
+class SignatoryUpdate(SignatoryCreate):
+    name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z.\s]+$"
+    )
 
 class SignatoryOut(SignatoryBase):
     id: uuid.UUID
     user_id: uuid.UUID
+    created_at: ISTDateTime
+    updated_at: ISTDateTime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+class CompanyLetterheadOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    version: int
+    storage_file_location: str
+    filename: str
+    is_active: bool
     created_at: ISTDateTime
     updated_at: ISTDateTime
 

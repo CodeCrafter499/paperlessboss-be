@@ -97,3 +97,5 @@ backend_api/core/.env
 .env.local
 .env.local.bak
 .env.production
+
+generated_letters/

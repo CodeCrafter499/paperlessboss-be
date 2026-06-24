@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_db_session
 from api.v1.auth import get_current_user
 from db.models import User
-from schemas.profile import CompanyCreate, CompanyOut, SignatoryCreate, SignatoryOut
+from schemas.profile import CompanyCreate, CompanyOut, SignatoryCreate, SignatoryOut, CompanyLetterheadOut
 from services import profile_service
 
 router = APIRouter()
@@ -54,15 +54,14 @@ async def upsert_signatory(
     return signatory
 
 
-@router.post("/company/letterhead", status_code=status.HTTP_200_OK)
+@router.post("/company/letterhead", response_model=CompanyLetterheadOut, status_code=status.HTTP_200_OK)
 async def upload_company_letterhead(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    from datetime import datetime, timezone, timedelta
-    from sqlalchemy import select
-    from db.models import AuthorisedSignatory, StorageMapping
+    from sqlalchemy import select, func, update
+    from db.models import CompanyLetterhead
     from services.offer_letter.letterhead import upload_letterhead_to_supabase
 
     if not current_user.company_id:
@@ -79,63 +78,180 @@ async def upload_company_letterhead(
             detail="Invalid file format. Only PDF files are allowed for letterheads."
         )
 
-    # Get user's signatory profile
-    signatory = await db.scalar(
-        select(AuthorisedSignatory).filter(AuthorisedSignatory.user_id == current_user.id)
+    # 1. Determine next version number
+    stmt_max_version = select(func.max(CompanyLetterhead.version)).where(
+        CompanyLetterhead.company_id == company_id
     )
-    if not signatory:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You must set up your authorised signatory details first before uploading a letterhead."
-        )
+    max_version = await db.scalar(stmt_max_version)
+    next_version = (max_version or 0) + 1
 
+    # 2. Read bytes and upload to Supabase Storage
     file_bytes = await file.read()
-
-    # Upload to Supabase Storage
-    filename = f"letterheads/{company_id}_{signatory.id}.pdf"
+    filename = f"letterheads/{company_id}_v{next_version}.pdf"
     content_type = "application/pdf"
     uploaded_path = upload_letterhead_to_supabase(file_bytes, filename, content_type)
 
-    # Check if mapping already exists, update it, or insert a new one
-    mapping = await db.scalar(
-        select(StorageMapping).filter(
-            StorageMapping.company_id == company_id,
-            StorageMapping.authorised_signatory_id == signatory.id,
-            StorageMapping.document_type == "letterhead"
-        )
+    # 3. Mark all previous versions as inactive
+    stmt_deactivate = (
+        update(CompanyLetterhead)
+        .where(CompanyLetterhead.company_id == company_id)
+        .values(is_active=False)
     )
-    
-    IST = timezone(timedelta(hours=5, minutes=30))
-    now = datetime.now(IST).replace(tzinfo=None)
+    await db.execute(stmt_deactivate)
 
-    if mapping:
-        mapping.storage_file_location = uploaded_path
-        mapping.updated_at = now
-    else:
-        mapping = StorageMapping(
-            company_id=company_id,
-            authorised_signatory_id=signatory.id,
-            employee_id=None,
-            document_type="letterhead",
-            storage_file_location=uploaded_path,
-            created_at=now,
-            updated_at=now
-        )
-        db.add(mapping)
-        
+    # 4. Insert new letterhead version
+    new_letterhead = CompanyLetterhead(
+        company_id=company_id,
+        version=next_version,
+        storage_file_location=uploaded_path,
+        filename=file.filename,
+        is_active=True
+    )
+    db.add(new_letterhead)
+    
     try:
         await db.commit()
+        await db.refresh(new_letterhead)
     except Exception as e:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save mapping to database: {str(e)}"
+            detail=f"Failed to save letterhead details: {str(e)}"
         )
 
-    return {
-        "message": "Letterhead uploaded and mapped successfully.",
-        "storage_file_location": uploaded_path,
-        "company_id": company_id,
-        "authorised_signatory_id": signatory.id
-    }
+    return new_letterhead
+
+
+@router.get("/company/letterheads", response_model=list[CompanyLetterheadOut])
+async def list_company_letterheads(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    from sqlalchemy import select
+    from db.models import CompanyLetterhead
+
+    if not current_user.company_id:
+        return []
+
+    stmt = select(CompanyLetterhead).where(
+        CompanyLetterhead.company_id == current_user.company_id
+    ).order_by(CompanyLetterhead.version.desc())
+    
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.put("/company/letterheads/{letterhead_id}/activate", response_model=CompanyLetterheadOut)
+async def activate_company_letterhead(
+    letterhead_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    from sqlalchemy import select, update
+    from db.models import CompanyLetterhead
+
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User is not associated with a company")
+
+    stmt = select(CompanyLetterhead).where(
+        CompanyLetterhead.id == letterhead_id,
+        CompanyLetterhead.company_id == current_user.company_id
+    )
+    result = await db.execute(stmt)
+    letterhead = result.scalar_one_or_none()
+
+    if not letterhead:
+        raise HTTPException(status_code=404, detail="Letterhead version not found")
+
+    # Deactivate all other versions
+    stmt_deactivate = (
+        update(CompanyLetterhead)
+        .where(CompanyLetterhead.company_id == current_user.company_id)
+        .values(is_active=False)
+    )
+    await db.execute(stmt_deactivate)
+
+    # Activate selected
+    letterhead.is_active = True
+
+    try:
+        await db.commit()
+        await db.refresh(letterhead)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to activate letterhead: {str(e)}"
+        )
+
+    return letterhead
+
+
+@router.get("/company/letterheads/active/pdf")
+async def get_active_letterhead_pdf(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    from sqlalchemy import select
+    from fastapi.responses import Response
+    from db.models import CompanyLetterhead
+    from services.offer_letter.letterhead import download_from_supabase, LETTERHEAD_PDF_PATH
+
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User is not associated with a company")
+
+    stmt = select(CompanyLetterhead).where(
+        CompanyLetterhead.company_id == current_user.company_id,
+        CompanyLetterhead.is_active == True
+    )
+    result = await db.execute(stmt)
+    letterhead = result.scalar_one_or_none()
+
+    if letterhead:
+        try:
+            pdf_bytes = download_from_supabase(letterhead.storage_file_location)
+            return Response(content=pdf_bytes, media_type="application/pdf")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to download active letterhead: {str(e)}")
+
+    # Fallback to local default letterhead PDF
+    if LETTERHEAD_PDF_PATH.is_file():
+        try:
+            with open(LETTERHEAD_PDF_PATH, "rb") as f:
+                return Response(content=f.read(), media_type="application/pdf")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to read local fallback letterhead: {str(e)}")
+
+    raise HTTPException(status_code=404, detail="No active letterhead found")
+
+
+@router.get("/company/letterheads/{letterhead_id}/pdf")
+async def get_letterhead_pdf(
+    letterhead_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    from sqlalchemy import select
+    from fastapi.responses import Response
+    from db.models import CompanyLetterhead
+    from services.offer_letter.letterhead import download_from_supabase
+
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="User is not associated with a company")
+
+    stmt = select(CompanyLetterhead).where(
+        CompanyLetterhead.id == letterhead_id,
+        CompanyLetterhead.company_id == current_user.company_id
+    )
+    result = await db.execute(stmt)
+    letterhead = result.scalar_one_or_none()
+
+    if not letterhead:
+        raise HTTPException(status_code=404, detail="Letterhead not found")
+
+    try:
+        pdf_bytes = download_from_supabase(letterhead.storage_file_location)
+        return Response(content=pdf_bytes, media_type="application/pdf")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download letterhead: {str(e)}")
 

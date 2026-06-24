@@ -11,6 +11,7 @@ from api.deps import get_db_session
 from api.v1.auth import get_current_user
 from db.models import User
 from schemas.offer_letter import (
+    GenerateOfferLettersRequest,
     GenerateOfferLettersResponse,
     OfferLetterStatusResponse,
     LogGenerationRequest,
@@ -34,6 +35,7 @@ def _sanitize_filename(name: str) -> str:
 
 @router.post("/generate", response_model=GenerateOfferLettersResponse)
 async def generate_offer_letters(
+    req_body: Optional[GenerateOfferLettersRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -48,7 +50,8 @@ async def generate_offer_letters(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No employees found for this company",
         )
-    res = await generate_letters_for_company(db, company_id)
+    letterhead_id = req_body.letterhead_id if req_body else None
+    res = await generate_letters_for_company(db, company_id, letterhead_id=letterhead_id)
     
     # Log the successful generation event in generated_letter_logs for statistics
     if res.results:

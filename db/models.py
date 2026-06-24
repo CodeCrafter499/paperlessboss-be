@@ -32,6 +32,24 @@ class Company(Base):
     
     users: Mapped[list["User"]] = relationship("User", back_populates="company")
 
+class CompanyLetterhead(Base):
+    __tablename__ = "company_letterheads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    storage_file_location: Mapped[str] = mapped_column(Text, nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(IST).replace(tzinfo=None), 
+        onupdate=lambda: datetime.now(IST).replace(tzinfo=None)
+    )
+
+    company: Mapped["Company"] = relationship("Company")
+
 class User(Base):
     __tablename__ = "users"
     

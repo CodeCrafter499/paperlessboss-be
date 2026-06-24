@@ -35,6 +35,7 @@ def docx_download_url(employee_id: int) -> str:
 async def generate_letters_for_company(
     db: AsyncSession,
     company_id: uuid.UUID,
+    letterhead_id: Optional[uuid.UUID] = None,
 ) -> GenerateOfferLettersResponse:
     employees = await get_employees_by_company(db, company_id)
     
@@ -55,23 +56,13 @@ async def generate_letters_for_company(
         for employee in employees:
             try:
                 existing = existing_letters.get(employee.id)
-                if existing and paths_exist(existing.pdf_path, existing.docx_path):
-                    existed_count += 1
-                    results.append(
-                        EmployeeLetterResult(
-                            employee_id=employee.id,
-                            employee_name=employee.employee_name,
-                            status="already_existed",
-                            pdf_url=pdf_download_url(employee.id),
-                            docx_url=docx_download_url(employee.id),
-                        )
-                    )
-                    continue
 
                 sig_id = employee.authorised_signatory_id
-                cache_key = (company_id, sig_id)
+                cache_key = (company_id, sig_id, letterhead_id)
                 if cache_key not in letterheads_cache:
-                    letterheads_cache[cache_key] = await get_processed_letterhead(db, company_id, sig_id)
+                    letterheads_cache[cache_key] = await get_processed_letterhead(
+                        db, company_id, sig_id, letterhead_id=letterhead_id
+                    )
 
                 letterhead = letterheads_cache[cache_key]
                 pdf_path, docx_path = letter_paths(company_id, employee.id)

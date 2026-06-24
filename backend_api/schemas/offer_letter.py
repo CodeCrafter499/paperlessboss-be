@@ -78,3 +78,7 @@ class GenerationHistoryResponse(BaseModel):
     unique_employees_count: int
     logs: list[GeneratedLetterLogResponseItem]
 
+
+class GenerateOfferLettersRequest(BaseModel):
+    letterhead_id: Optional[uuid.UUID] = None
+

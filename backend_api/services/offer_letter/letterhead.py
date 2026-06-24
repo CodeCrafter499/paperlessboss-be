@@ -16,6 +16,28 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+import subprocess
+import shutil
+
+_has_poppler: Optional[bool] = None
+
+def check_poppler() -> bool:
+    global _has_poppler
+    if _has_poppler is not None:
+        return _has_poppler
+    
+    if shutil.which("pdftoppm") or shutil.which("pdfinfo"):
+        _has_poppler = True
+        return True
+        
+    try:
+        subprocess.run(["pdftoppm", "-h"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _has_poppler = True
+        return True
+    except Exception:
+        _has_poppler = False
+        return False
+
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 LETTERHEAD_PDF_PATH = _BACKEND_ROOT / "assets" / "NIRL_Letter_Head_Mar_2026.pdf"
 
@@ -29,10 +51,15 @@ class ProcessedLetterhead:
         self.footer_bytes: Optional[BytesIO] = None
         self.header_path: Optional[Path] = None
         self.footer_path: Optional[Path] = None
-        self.available: bool = False
+        self.available: bool = True
+        self.images_available: bool = False
         self._process(source)
 
     def _process(self, source: str | Path | bytes) -> None:
+        if not check_poppler():
+            logger.warning("Poppler is not installed. Skipping image extraction for DOCX/PDF header fallback.")
+            return
+
         try:
             from pdf2image import convert_from_bytes, convert_from_path
 
@@ -69,9 +96,9 @@ class ProcessedLetterhead:
             self.header_image.save(self.header_path, format="PNG")
             self.footer_image.save(self.footer_path, format="PNG")
 
-            self.available = True
+            self.images_available = True
         except Exception as exc:
-            logger.exception("Failed to process letterhead: %s", exc)
+            logger.exception("Failed to process letterhead images: %s", exc)
 
     def cleanup(self) -> None:
         try:
@@ -143,25 +170,30 @@ def download_from_supabase(filename: str) -> bytes:
 async def get_processed_letterhead(
     db: AsyncSession,
     company_id: uuid.UUID,
-    signatory_id: Optional[uuid.UUID]
+    signatory_id: Optional[uuid.UUID] = None,
+    letterhead_id: Optional[uuid.UUID] = None
 ) -> Optional[ProcessedLetterhead]:
     from sqlalchemy import select
-    from db.models import StorageMapping
+    from db.models import CompanyLetterhead
 
     # Find mapping in DB
-    stmt = select(StorageMapping).where(
-        StorageMapping.company_id == company_id,
-        StorageMapping.document_type == "letterhead"
-    )
-    if signatory_id:
-        stmt = stmt.where(StorageMapping.authorised_signatory_id == signatory_id)
+    if letterhead_id:
+        stmt = select(CompanyLetterhead).where(
+            CompanyLetterhead.company_id == company_id,
+            CompanyLetterhead.id == letterhead_id
+        )
+    else:
+        stmt = select(CompanyLetterhead).where(
+            CompanyLetterhead.company_id == company_id,
+            CompanyLetterhead.is_active == True
+        )
 
     result = await db.execute(stmt)
     mapping = result.scalar_one_or_none()
 
     if mapping:
         try:
-            logger.info("Found letterhead mapping in database at: %s", mapping.storage_file_location)
+            logger.info("Found versioned letterhead in database at: %s", mapping.storage_file_location)
             pdf_bytes = download_from_supabase(mapping.storage_file_location)
             processed = ProcessedLetterhead(pdf_bytes)
             if processed.available:
