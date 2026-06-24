@@ -53,11 +53,6 @@ class CompanyBase(BaseModel):
         return self
 
 class CompanyCreate(CompanyBase):
-    labour_identification_number: Optional[str] = Field(
-        None,
-        pattern=r"^\d{10}$",
-        description="10-digit Labour Identification Number"
-    )
     mobile_no: Optional[str] = Field(
         None,
         pattern=r"^\d{10}$",
