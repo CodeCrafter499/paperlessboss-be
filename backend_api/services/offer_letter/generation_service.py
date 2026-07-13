@@ -78,96 +78,110 @@ async def generate_letters_for_company(
 
     letterheads_cache = {}
 
-    try:
-        for employee in employees:
+    import asyncio
+    sem = asyncio.Semaphore(4)  # Limit concurrency to 4 worker threads
+
+    async def worker(emp):
+        async with sem:
+            pdf_path, docx_path = letter_paths(company_id, emp.id)
+            existing = existing_letters.get(emp.id)
+
+            sig_id = emp.authorised_signatory_id
+            cache_key = (company_id, sig_id, letterhead_id)
+            if cache_key not in letterheads_cache:
+                letterheads_cache[cache_key] = await get_processed_letterhead(
+                    db, company_id, sig_id, letterhead_id=letterhead_id
+                )
+            letterhead = letterheads_cache[cache_key]
+
             try:
-                existing = existing_letters.get(employee.id)
-
-                sig_id = employee.authorised_signatory_id
-                cache_key = (company_id, sig_id, letterhead_id)
-                if cache_key not in letterheads_cache:
-                    letterheads_cache[cache_key] = await get_processed_letterhead(
-                        db, company_id, sig_id, letterhead_id=letterhead_id
-                    )
-
-                letterhead = letterheads_cache[cache_key]
-                pdf_path, docx_path = letter_paths(company_id, employee.id)
-
-                if letterhead and letterhead.available:
-                    generate_appointment_pdf(
-                        employee,
-                        pdf_path,
-                        header_path=str(letterhead.header_path) if letterhead.images_available else None,
-                        footer_path=str(letterhead.footer_path) if letterhead.images_available else None,
-                        signature_image=signature_image,
-                        stamp_image=stamp_image,
-                        company_name=company_name,
-                    )
-                    generate_appointment_docx(
-                        employee,
-                        docx_path,
-                        header_bytes=letterhead.header_bytes,
-                        footer_bytes=letterhead.footer_bytes,
-                        signature_image=signature_image,
-                        stamp_image=stamp_image,
-                        company_name=company_name
-                    )
-                else:
-                    generate_appointment_pdf(
-                        employee,
-                        pdf_path,
-                        signature_image=signature_image,
-                        stamp_image=stamp_image,
-                        company_name=company_name
-                    )
-                    generate_appointment_docx(
-                        employee,
-                        docx_path,
-                        signature_image=signature_image,
-                        stamp_image=stamp_image,
-                        company_name=company_name
-                    )
-
-                from services.offer_letter.tables import IST
-                from datetime import datetime
-                now = datetime.now(IST).replace(tzinfo=None)
-                if existing:
-                    existing.pdf_path = str(pdf_path)
-                    existing.docx_path = str(docx_path)
-                    existing.generated_at = now
-                else:
-                    new_letter = OfferLetter(
-                        employee_id=employee.id,
-                        company_id=company_id,
-                        pdf_path=str(pdf_path),
-                        docx_path=str(docx_path),
-                        generated_at=now,
-                    )
-                    db.add(new_letter)
-                    existing_letters[employee.id] = new_letter
-
-                generated_count += 1
-                results.append(
-                    EmployeeLetterResult(
-                        employee_id=employee.id,
-                        employee_name=employee.employee_name,
-                        status="generated",
-                        pdf_url=pdf_download_url(employee.id),
-                        docx_url=docx_download_url(employee.id),
-                    )
+                await asyncio.to_thread(
+                    compile_single_employee,
+                    emp,
+                    pdf_path,
+                    docx_path,
+                    letterhead,
+                    signature_image,
+                    stamp_image,
+                    company_name
                 )
+                return "generated", emp, pdf_path, docx_path, None
             except Exception as exc:
-                logger.exception("Offer letter generation failed for employee_id=%s", employee.id)
+                return "failed", emp, pdf_path, docx_path, exc
+
+    try:
+        tasks = [asyncio.create_task(worker(emp)) for emp in employees]
+        
+        from services.offer_letter.tables import OfferLetter
+        from services.offer_letter.tables import IST
+        from datetime import datetime
+
+        for fut in asyncio.as_completed(tasks):
+            status, emp, pdf_path, docx_path, exc = await fut
+
+            if status == "skipped":
+                existed_count += 1
                 results.append(
                     EmployeeLetterResult(
-                        employee_id=employee.id,
-                        employee_name=employee.employee_name,
-                        status="failed",
-                        error=str(exc),
+                        employee_id=emp.id,
+                        employee_name=emp.employee_name,
+                        status="already_existed",
+                        pdf_url=pdf_download_url(emp.id),
+                        docx_url=docx_download_url(emp.id),
                     )
                 )
-        
-        # Batch commit all inserts and updates in a single transaction
+            elif status == "generated":
+                try:
+                    now = datetime.now(IST).replace(tzinfo=None)
+                    existing = existing_letters.get(emp.id)
+                    if existing:
+                        existing.pdf_path = str(pdf_path)
+                        existing.docx_path = str(docx_path)
+                        existing.generated_at = now
+                    else:
+                        new_letter = OfferLetter(
+                            employee_id=emp.id,
+                            company_id=company_id,
+                            pdf_path=str(pdf_path),
+                            docx_path=str(docx_path),
+                            generated_at=now,
+                        )
+                        db.add(new_letter)
+                        existing_letters[emp.id] = new_letter
+
+                    generated_count += 1
+
+                    results.append(
+                        EmployeeLetterResult(
+                            employee_id=emp.id,
+                            employee_name=emp.employee_name,
+                            status="generated",
+                            pdf_url=pdf_download_url(emp.id),
+                            docx_url=docx_download_url(emp.id),
+                        )
+                    )
+                except Exception as db_exc:
+                    logger.error("Failed to prepare letter %s database record: %s", emp.id, db_exc)
+                    results.append(
+                        EmployeeLetterResult(
+                            employee_id=emp.id,
+                            employee_name=emp.employee_name,
+                            status="failed",
+                            error=f"Database prep failed: {str(db_exc)}"
+                        )
+                    )
+            else:
+                logger.error("Offer letter generation failed for employee_id=%s: %s", emp.id, exc)
+                results.append(
+                    EmployeeLetterResult(
+                        employee_id=emp.id,
+                        employee_name=emp.employee_name,
+                        status="failed",
+                        error=str(exc)
+                    )
+                )
+
+        # Bulk commit all records and decrement credits in a single transaction at the end!
         if generated_count > 0:
             user.remaining_copies = max(0, user.remaining_copies - generated_count)
             db.add(user)
@@ -213,10 +227,11 @@ async def get_company_letter_status(
     ready_count = 0
 
     for employee in employees:
-        record = existing_letters.get(employee.id)
-        ready = bool(record and paths_exist(record.pdf_path, record.docx_path))
+        pdf_path, docx_path = letter_paths(company_id, employee.id)
+        ready = pdf_path.is_file() and docx_path.is_file()
         if ready:
             ready_count += 1
+        record = existing_letters.get(employee.id)
         statuses.append(
             EmployeeLetterStatus(
                 employee_id=employee.id,
@@ -251,3 +266,54 @@ async def resolve_download_path(
 
     name = await get_employee_name(db, employee_id)
     return Path(file_path), name or "Employee"
+
+
+def compile_single_employee(employee, pdf_path, docx_path, letterhead, signature_image, stamp_image, company_name):
+    if letterhead and letterhead.available:
+        generate_appointment_pdf(
+            employee,
+            pdf_path,
+            header_path=str(letterhead.header_path) if letterhead.images_available else None,
+            footer_path=str(letterhead.footer_path) if letterhead.images_available else None,
+            signature_image=signature_image,
+            stamp_image=stamp_image,
+            company_name=company_name,
+        )
+        generate_appointment_docx(
+            employee,
+            docx_path,
+            header_bytes=letterhead.header_bytes,
+            footer_bytes=letterhead.footer_bytes,
+            signature_image=signature_image,
+            stamp_image=stamp_image,
+            company_name=company_name
+        )
+    else:
+        generate_appointment_pdf(
+            employee,
+            pdf_path,
+            signature_image=signature_image,
+            stamp_image=stamp_image,
+            company_name=company_name
+        )
+        generate_appointment_docx(
+            employee,
+            docx_path,
+            signature_image=signature_image,
+            stamp_image=stamp_image,
+            company_name=company_name
+        )
+
+
+async def generate_letters_background_task(
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    letterhead_id: Optional[uuid.UUID] = None
+):
+    from db.db_connection import DatabaseManager
+    db_mgr = DatabaseManager()
+    async with db_mgr.session_scope() as db:
+        try:
+            await generate_letters_for_company(db, company_id, user_id, letterhead_id=letterhead_id)
+        except Exception as e:
+            logger.exception("Failed to run offer letter background generation task: %s", e)

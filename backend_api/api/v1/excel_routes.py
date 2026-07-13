@@ -220,26 +220,47 @@ async def validate_excel_api(
             other_info = excel_value_to_str(get_aliased_value(row_dict, "Any other information", "")) or None
             
             if aadhaar_number in existing_employees:
-                # Update existing record
+                # Update existing record ONLY if there are changes
                 employee = existing_employees[aadhaar_number]
-                employee.company_id = current_user.company_id
-                employee.authorised_signatory_id = signatory_id
-                employee.employee_name = emp_name
-                employee.date_of_birth = dob
-                employee.father_mother_name = father_mother
-                employee.lin_number = lin_number
-                employee.uan_esic_number = uan_number
-                employee.designation = designation
-                employee.employment_type = employment_type
-                employee.skill_category = skill_category
-                employee.date_of_joining = doj
-                employee.basic_pay = basic_pay
-                employee.dearness_allowance = dearness_allowance
-                employee.other_allowance = other_allowance
-                employee.social_security_benefits = social_security
-                employee.duties_performed = duties
-                employee.benefits_under_chapter_vi = benefits_chapter_vi
-                employee.other_information = other_info
+                has_changes = (
+                    employee.company_id != current_user.company_id or
+                    employee.authorised_signatory_id != signatory_id or
+                    employee.employee_name != emp_name or
+                    employee.date_of_birth != dob or
+                    employee.father_mother_name != father_mother or
+                    employee.lin_number != lin_number or
+                    employee.uan_esic_number != uan_number or
+                    employee.designation != designation or
+                    employee.employment_type != employment_type or
+                    employee.skill_category != skill_category or
+                    employee.date_of_joining != doj or
+                    employee.basic_pay != basic_pay or
+                    employee.dearness_allowance != dearness_allowance or
+                    employee.other_allowance != other_allowance or
+                    employee.social_security_benefits != social_security or
+                    employee.duties_performed != duties or
+                    employee.benefits_under_chapter_vi != benefits_chapter_vi or
+                    employee.other_information != other_info
+                )
+                if has_changes:
+                    employee.company_id = current_user.company_id
+                    employee.authorised_signatory_id = signatory_id
+                    employee.employee_name = emp_name
+                    employee.date_of_birth = dob
+                    employee.father_mother_name = father_mother
+                    employee.lin_number = lin_number
+                    employee.uan_esic_number = uan_number
+                    employee.designation = designation
+                    employee.employment_type = employment_type
+                    employee.skill_category = skill_category
+                    employee.date_of_joining = doj
+                    employee.basic_pay = basic_pay
+                    employee.dearness_allowance = dearness_allowance
+                    employee.other_allowance = other_allowance
+                    employee.social_security_benefits = social_security
+                    employee.duties_performed = duties
+                    employee.benefits_under_chapter_vi = benefits_chapter_vi
+                    employee.other_information = other_info
             else:
                 # Create new record
                 employee = Employee(

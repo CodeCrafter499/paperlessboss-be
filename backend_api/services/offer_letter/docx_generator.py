@@ -149,7 +149,6 @@ def generate_appointment_docx(
 
     if signature_image or stamp_image:
         import base64
-        from reportlab.lib.units import Inches as RLInches # not needed, we can import from docx.shared
         from docx.shared import Inches as DocxInches
         p = add_body_paragraph()
         if signature_image:

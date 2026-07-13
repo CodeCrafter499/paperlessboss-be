@@ -2,7 +2,7 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
@@ -20,7 +20,7 @@ from schemas.offer_letter import (
     GenerationHistoryResponse,
 )
 from services.offer_letter.generation_service import (
-    generate_letters_for_company,
+    generate_letters_background_task,
     get_company_letter_status,
     resolve_download_path,
 )
@@ -36,6 +36,7 @@ def _sanitize_filename(name: str) -> str:
 
 @router.post("/generate", response_model=GenerateOfferLettersResponse)
 async def generate_offer_letters(
+    background_tasks: BackgroundTasks,
     req_body: Optional[GenerateOfferLettersRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
@@ -46,58 +47,50 @@ async def generate_offer_letters(
             detail="Your user account is not linked to any company profile. Please create or update a company profile first.",
         )
     company_id = current_user.company_id
-    if not await get_employees_by_company(db, company_id):
+    employees = await get_employees_by_company(db, company_id)
+    if not employees:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No employees found for this company",
         )
     letterhead_id = req_body.letterhead_id if req_body else None
-    try:
-        res = await generate_letters_for_company(db, company_id, current_user.id, letterhead_id=letterhead_id)
-    except ValueError as val_err:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(val_err)
-        )
+    # Reset existing offer letter paths for this company so the status endpoint tracks fresh generation live
+    from sqlalchemy import update
+    from services.offer_letter.tables import OfferLetter
+    await db.execute(
+        update(OfferLetter)
+        .where(OfferLetter.company_id == company_id)
+        .values(pdf_path=None, docx_path=None)
+    )
+    await db.commit()
+
+    # Delete existing physical files on disk so status API reads 0% progress at start
+    from services.offer_letter.storage import letter_paths
+    for employee in employees:
+        pdf_path, docx_path = letter_paths(company_id, employee.id)
+        try:
+            if pdf_path.is_file():
+                pdf_path.unlink()
+            if docx_path.is_file():
+                docx_path.unlink()
+        except Exception:
+            pass
     
-    # Log the successful generation event in generated_letter_logs for statistics
-    if res.results:
-        from sqlalchemy import select
-        from db.models import Employee, GeneratedLetterLog
-        
-        emp_ids = [r.employee_id for r in res.results if r.status in ("generated", "already_existed")]
-        if emp_ids:
-            emp_stmt = select(Employee).where(Employee.id.in_(emp_ids))
-            emp_res = await db.execute(emp_stmt)
-            employees_map = {e.id: e for e in emp_res.scalars().all()}
-            
-            logs_to_add = []
-            for r in res.results:
-                if r.status in ("generated", "already_existed") and r.employee_id in employees_map:
-                    emp = employees_map[r.employee_id]
-                    # We can log it as a historical event
-                    log_entry = GeneratedLetterLog(
-                        user_id=current_user.id,
-                        employee_id=emp.id,
-                        company_id=current_user.company_id,
-                        employee_name=emp.employee_name,
-                        lin_number=emp.lin_number,
-                        designation=emp.designation,
-                        date_of_joining=emp.date_of_joining,
-                        format="both",  # Server-side generate makes both
-                        downloaded=False,
-                    )
-                    logs_to_add.append(log_entry)
-            if logs_to_add:
-                db.add_all(logs_to_add)
-                try:
-                    await db.commit()
-                except Exception as db_err:
-                    # Log the DB error, but don't fail the response since offer letters were generated
-                    db.rollback()
-                    logger.error(f"Failed to save generated letter history log: {db_err}")
-                    
-    return res
+    # Dispatch generation to background task
+    background_tasks.add_task(
+        generate_letters_background_task,
+        company_id,
+        current_user.id,
+        letterhead_id
+    )
+    
+    return GenerateOfferLettersResponse(
+        company_id=company_id,
+        total_employees=len(employees),
+        generated=0,
+        already_existed=0,
+        results=[]
+    )
 
 
 @router.get("/status", response_model=OfferLetterStatusResponse)

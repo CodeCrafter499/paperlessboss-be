@@ -109,22 +109,39 @@ async def validate_wage_excel_api(
 
             key = (emp_name, wage_month, wage_year)
             if key in existing_wages:
-                # Update existing record
+                # Update existing record ONLY if there are changes
                 wage_slip = existing_wages[key]
-                wage_slip.father_mother_spouse_name = father_mother_spouse
-                wage_slip.designation = designation
-                wage_slip.uan = uan
-                wage_slip.bank_account_number = bank_acc
-                wage_slip.rate_basic = rate_basic
-                wage_slip.rate_da = rate_da
-                wage_slip.rate_allowances = rate_allow
-                wage_slip.total_attendance = attendance
-                wage_slip.overtime_wages = overtime_wages = ot_wages
-                wage_slip.gross_wages = gross
-                wage_slip.deduction_pf = pf
-                wage_slip.deduction_esi = esi
-                wage_slip.deduction_others = others
-                wage_slip.net_wages = net_wages
+                has_changes = (
+                    wage_slip.father_mother_spouse_name != father_mother_spouse or
+                    wage_slip.designation != designation or
+                    wage_slip.uan != uan or
+                    wage_slip.bank_account_number != bank_acc or
+                    wage_slip.rate_basic != rate_basic or
+                    wage_slip.rate_da != rate_da or
+                    wage_slip.rate_allowances != rate_allow or
+                    wage_slip.total_attendance != attendance or
+                    wage_slip.overtime_wages != ot_wages or
+                    wage_slip.gross_wages != gross or
+                    wage_slip.deduction_pf != pf or
+                    wage_slip.deduction_esi != esi or
+                    wage_slip.deduction_others != others or
+                    wage_slip.net_wages != net_wages
+                )
+                if has_changes:
+                    wage_slip.father_mother_spouse_name = father_mother_spouse
+                    wage_slip.designation = designation
+                    wage_slip.uan = uan
+                    wage_slip.bank_account_number = bank_acc
+                    wage_slip.rate_basic = rate_basic
+                    wage_slip.rate_da = rate_da
+                    wage_slip.rate_allowances = rate_allow
+                    wage_slip.total_attendance = attendance
+                    wage_slip.overtime_wages = ot_wages
+                    wage_slip.gross_wages = gross
+                    wage_slip.deduction_pf = pf
+                    wage_slip.deduction_esi = esi
+                    wage_slip.deduction_others = others
+                    wage_slip.net_wages = net_wages
             else:
                 # Create a new record
                 wage_slip = WageSlip(
