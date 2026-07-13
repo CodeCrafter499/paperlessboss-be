@@ -23,6 +23,9 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run Backend Tests (Pytest)
+      env:
+        ENVIRONMENT: "test"
+        SECRET_KEY: "temporary_dev_test_key_for_github_actions_validation_bypass"
       run: |
         pytest tests/
 
@@ -31,15 +34,26 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-    - name: Deploy to AWS Ubuntu Server via SSH (Docker Compose)
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Copy backend files to AWS Server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: '13.62.50.7'
+        username: 'ubuntu'
+        key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
+        source: "."
+        target: "/home/ubuntu/app/backend"
+        rm: false # Do not delete files on server (keeps your manually created .env file safe!)
+
+    - name: Start Docker Compose on AWS via SSH
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: '13.62.50.7'
         username: 'ubuntu'
         key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
         script: |
-          cd /path/to/your/deployed/backend-folder
-          git checkout main
-          git pull origin main
-          # Rebuild and restart the container in the background
+          cd /home/ubuntu/app/backend
+          # Restart uvicorn containers using docker-compose
           docker compose up --build -d
