@@ -8,10 +8,19 @@ from services.offer_letter.tables import Employee, IST, OfferLetter
 from schemas.employee import EmployeeRecord
 
 
+from sqlalchemy.orm import selectinload
+
+
 async def get_employees_by_company(db: AsyncSession, company_id: uuid.UUID) -> list[EmployeeRecord]:
-    stmt = select(Employee).where(Employee.company_id == company_id)
+    stmt = select(Employee).options(selectinload(Employee.company)).where(Employee.company_id == company_id)
     result = await db.execute(stmt)
-    return [EmployeeRecord.model_validate(row) for row in result.scalars().all()]
+    records = []
+    for row in result.scalars().all():
+        record = EmployeeRecord.model_validate(row)
+        if row.company:
+            record.company_name = row.company.name
+        records.append(record)
+    return records
 
 
 async def get_offer_letter_by_employee(db: AsyncSession, employee_id: int) -> OfferLetter | None:

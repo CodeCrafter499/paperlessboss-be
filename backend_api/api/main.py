@@ -10,6 +10,8 @@ from api.v1.excel_routes import router as excel_router
 from api.v1.offer_letter_routes import router as offer_letter_router
 from services.offer_letter.letterhead import is_letterhead_available
 from api.v1.profile import router as profile_router
+from api.v1.billing import router as billing_router
+from api.v1.wage_routes import router as wage_router
 
 
 @asynccontextmanager
@@ -35,6 +37,38 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_by UUID;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_copies INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_wage_copies INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE authorised_signatories ADD COLUMN IF NOT EXISTS signature_image TEXT;"))
+            await conn.execute(text("ALTER TABLE authorised_signatories ADD COLUMN IF NOT EXISTS stamp_image TEXT;"))
+            await conn.execute(text("ALTER TABLE authorised_signatories ADD COLUMN IF NOT EXISTS include_signature_stamp BOOLEAN DEFAULT FALSE;"))
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS payment_transactions (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    amount NUMERIC(10, 2) NOT NULL,
+                    copies_added INTEGER NOT NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
+                );
+            """))
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS billing_settings (
+                    key VARCHAR(50) PRIMARY KEY,
+                    value NUMERIC(10, 2) NOT NULL
+                );
+            """))
+            res = await conn.execute(text("SELECT COUNT(*) FROM billing_settings;"))
+            count = res.scalar()
+            if count == 0:
+                defaults = [
+                    ("tier2_threshold", 1000.0),
+                    ("tier2_copies", 45.0),
+                    ("tier1_threshold", 500.0),
+                    ("tier1_copies", 20.0),
+                    ("base_rate", 30.0),
+                ]
+                for key, val in defaults:
+                    await conn.execute(text("INSERT INTO billing_settings (key, value) VALUES (:key, :value);"), {"key": key, "value": val})
             await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;"))
         print(">>> Database initialized and tables synced successfully!")
@@ -62,8 +96,8 @@ app = FastAPI(
 
 # Allowed production and development origins
 origins = [
-    "https://paperlessboss.com",
-    "https://www.paperlessboss.com",
+    # "https://paperlessboss.com",
+    # "https://www.paperlessboss.com",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:8000",
@@ -82,6 +116,8 @@ app.include_router(auth_router, prefix=f"{settings.API_V1_STR}/auth", tags=["Aut
 app.include_router(excel_router)
 app.include_router(profile_router, prefix=f"{settings.API_V1_STR}/profile", tags=["Profile"])
 app.include_router(offer_letter_router, prefix=settings.API_V1_STR)
+app.include_router(billing_router, prefix=f"{settings.API_V1_STR}/billing", tags=["Billing"])
+app.include_router(wage_router, prefix=f"{settings.API_V1_STR}/wages", tags=["Wages"])
 
 
 @app.get("/")

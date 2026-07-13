@@ -106,6 +106,12 @@ async def upsert_signatory(db: AsyncSession, user: User, signatory_data: Signato
             signatory.email = signatory_data.email
         if signatory_data.mobile_no is not None:
             signatory.mobile_no = signatory_data.mobile_no
+        if signatory_data.signature_image is not None:
+            signatory.signature_image = signatory_data.signature_image
+        if signatory_data.stamp_image is not None:
+            signatory.stamp_image = signatory_data.stamp_image
+        if signatory_data.include_signature_stamp is not None:
+            signatory.include_signature_stamp = signatory_data.include_signature_stamp
     else:
         signatory = AuthorisedSignatory(
             user_id=user.id,
@@ -113,7 +119,10 @@ async def upsert_signatory(db: AsyncSession, user: User, signatory_data: Signato
             address=signatory_data.address,
             pan=pan,
             email=signatory_data.email,
-            mobile_no=signatory_data.mobile_no
+            mobile_no=signatory_data.mobile_no,
+            signature_image=signatory_data.signature_image,
+            stamp_image=signatory_data.stamp_image,
+            include_signature_stamp=signatory_data.include_signature_stamp
         )
         db.add(signatory)
         

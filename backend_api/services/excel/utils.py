@@ -118,3 +118,43 @@ def validate_numeric(value):
     except ValueError:
         return False
 
+
+COLUMN_ALIASES = {
+    "Type of Employment": [
+        "Type of Employment",
+        "Type of Employment (Regular/Fixed-term-employment/Contractual)",
+        "Type of Employment ",
+    ],
+    "Applicability of social security benefits": [
+        "Applicability of social security benefits",
+        "Applicability of social security [EPFO and ESIC] benefits",
+    ],
+    "Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee)": [
+        "Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee)",
+        "Benefits under chapter VI (Maternity Benefit) of Code on Social Security, 2020",
+        "Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020",
+    ]
+}
+
+
+def get_aliased_value(row_dict, field_name, default=""):
+    val = row_dict.get(field_name)
+    if val is not None and not (isinstance(val, float) and math.isnan(val)):
+        return val
+
+    aliases = COLUMN_ALIASES.get(field_name, [])
+    for alias in aliases:
+        val = row_dict.get(alias)
+        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+            return val
+
+    field_lower = field_name.lower().replace(" ", "")
+    for k, v in row_dict.items():
+        k_clean = str(k).lower().replace(" ", "")
+        if field_lower in k_clean or k_clean in field_lower:
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                return v
+
+    return default
+
+

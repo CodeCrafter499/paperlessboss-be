@@ -30,3 +30,4 @@ class EmployeeRecord(BaseModel):
     duties_performed: Optional[str] = None
     benefits_under_chapter_vi: Optional[str] = None
     other_information: Optional[str] = None
+    company_name: Optional[str] = None

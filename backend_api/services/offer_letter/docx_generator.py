@@ -51,7 +51,8 @@ def _add_horizontal_rule(paragraph, color="2E7D32"):
 def _add_header_footer_images(
     doc: Document,
     header_stream: Optional[BytesIO] = None,
-    footer_stream: Optional[BytesIO] = None
+    footer_stream: Optional[BytesIO] = None,
+    company_name: Optional[str] = None
 ) -> None:
     section = doc.sections[0]
     content_width = section.page_width - section.left_margin - section.right_margin
@@ -66,24 +67,18 @@ def _add_header_footer_images(
         run.add_picture(header_stream, width=content_width)
     else:
         hp = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
-        run = hp.add_run("NLC India Renewables Limited")
+        run = hp.add_run(company_name or "PaperlessBoss Private Limited")
         _set_run_font(run, bold=True)
-
-    if footer_stream is None:
-        footer_stream = get_footer_bytes()
-
-    if footer_stream:
-        footer = section.footer
-        footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-        run = footer_para.add_run()
-        run.add_picture(footer_stream, width=content_width)
 
 
 def generate_appointment_docx(
     employee: EmployeeRecord,
     output_path: str | Path,
     header_bytes: Optional[BytesIO] = None,
-    footer_bytes: Optional[BytesIO] = None
+    footer_bytes: Optional[BytesIO] = None,
+    signature_image: Optional[str] = None,
+    stamp_image: Optional[str] = None,
+    company_name: Optional[str] = None
 ) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +93,7 @@ def generate_appointment_docx(
     section.left_margin = Inches(0.71)
     section.right_margin = Inches(0.71)
 
-    _add_header_footer_images(doc, header_bytes, footer_bytes)
+    _add_header_footer_images(doc, header_bytes, footer_bytes, company_name=company_name)
 
     def add_body_paragraph():
         return doc.add_paragraph()
@@ -123,20 +118,7 @@ def generate_appointment_docx(
     hr = add_body_paragraph()
     _add_horizontal_rule(hr, color="2E7D32")
 
-    p = add_body_paragraph()
-    run = p.add_run(f"Dear {employee.employee_name},")
-    _set_run_font(run)
-
-    p = add_body_paragraph()
-    r1 = p.add_run("Sub: ")
-    _set_run_font(r1, bold=True)
-    r2 = p.add_run(f"Appointment as {employee.designation} – reg.")
-    _set_run_font(r2, bold=True, underline=True)
-
-    p = add_body_paragraph()
-    run = p.add_run(OPENING_PARAGRAPH)
-    _set_run_font(run)
-
+    company_name = employee.company_name or "PaperlessBoss Private Limited"
     p = add_body_paragraph()
     run = p.add_run("TERMS OF APPOINTMENT")
     _set_run_font(run, bold=True, size=HEADING_PT)
@@ -162,10 +144,34 @@ def generate_appointment_docx(
     _set_run_font(run)
 
     p = add_body_paragraph()
-    run = p.add_run("For NLC India Renewables Limited")
+    run = p.add_run(f"For {company_name}")
     _set_run_font(run, bold=True)
 
-    doc.add_paragraph()
+    if signature_image or stamp_image:
+        import base64
+        from reportlab.lib.units import Inches as RLInches # not needed, we can import from docx.shared
+        from docx.shared import Inches as DocxInches
+        p = add_body_paragraph()
+        if signature_image:
+            try:
+                b64_sig = signature_image.split(";base64,")[1] if ";base64," in signature_image else signature_image
+                sig_bytes = base64.b64decode(b64_sig)
+                run = p.add_run()
+                run.add_picture(BytesIO(sig_bytes), width=DocxInches(1.5))
+            except Exception:
+                pass
+        if stamp_image:
+            try:
+                b64_stamp = stamp_image.split(";base64,")[1] if ";base64," in stamp_image else stamp_image
+                stamp_bytes = base64.b64decode(b64_stamp)
+                p.add_run("        ")
+                run = p.add_run()
+                run.add_picture(BytesIO(stamp_bytes), width=DocxInches(0.8))
+            except Exception:
+                pass
+    else:
+        doc.add_paragraph()
+
     p = add_body_paragraph()
     run = p.add_run("Authorised Signatory")
     _set_run_font(run, bold=True)
@@ -203,6 +209,6 @@ def generate_appointment_docx(
     _set_run_font(run)
 
     doc.core_properties.title = f"Appointment Letter – {employee.employee_name}"
-    doc.core_properties.author = "NLC India Renewables Limited"
+    doc.core_properties.author = company_name
     doc.save(str(output_path))
     return output_path

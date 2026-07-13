@@ -59,6 +59,15 @@ class CompanyCreate(CompanyBase):
         description="10-digit Mobile Number"
     )
 
+    @model_validator(mode="after")
+    def validate_email_strict(self) -> "CompanyCreate":
+        if self.email:
+            import re
+            email_str = str(self.email)
+            if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$", email_str):
+                raise ValueError("Invalid email format (TLD must be 2 to 6 characters long)")
+        return self
+
 class CompanyUpdate(CompanyCreate):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
 
@@ -82,6 +91,9 @@ class SignatoryBase(BaseModel):
     )
     email: Optional[EmailStr] = None
     mobile_no: Optional[str] = Field(None, max_length=20)
+    signature_image: Optional[str] = None
+    stamp_image: Optional[str] = None
+    include_signature_stamp: Optional[bool] = False
 
 class SignatoryCreate(SignatoryBase):
     name: str = Field(

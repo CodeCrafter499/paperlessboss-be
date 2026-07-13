@@ -52,7 +52,13 @@ async def generate_offer_letters(
             detail="No employees found for this company",
         )
     letterhead_id = req_body.letterhead_id if req_body else None
-    res = await generate_letters_for_company(db, company_id, letterhead_id=letterhead_id)
+    try:
+        res = await generate_letters_for_company(db, company_id, current_user.id, letterhead_id=letterhead_id)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(val_err)
+        )
     
     # Log the successful generation event in generated_letter_logs for statistics
     if res.results:

@@ -92,7 +92,9 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
         email=register_data.email,
         hashed_password=hashed_pwd,
         is_verified=False,
-        is_active=True
+        is_active=True,
+        remaining_copies=100,
+        remaining_wage_copies=100
     )
     db.add(new_user)
     await db.flush()

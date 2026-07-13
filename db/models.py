@@ -66,6 +66,9 @@ class User(Base):
         onupdate=lambda: datetime.now(IST).replace(tzinfo=None)
     )
     
+    remaining_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    remaining_wage_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    
     company: Mapped[Optional[Company]] = relationship("Company", back_populates="users")
     authorised_signatory: Mapped[Optional[AuthorisedSignatory]] = relationship("AuthorisedSignatory", back_populates="user", uselist=False)
 
@@ -79,6 +82,9 @@ class AuthorisedSignatory(Base):
     pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mobile_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    signature_image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stamp_image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    include_signature_stamp: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, 
@@ -314,5 +320,57 @@ class GeneratedLetterLog(Base):
 
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     downloaded_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[downloaded_by])
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    copies_added: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+
+    user: Mapped["User"] = relationship("User")
+
+
+class BillingSetting(Base):
+    __tablename__ = "billing_settings"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+
+
+class WageSlip(Base):
+    __tablename__ = "wage_slips"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    father_mother_spouse_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    uan: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    bank_account_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    wage_month: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    wage_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rate_basic: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    rate_da: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    rate_allowances: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    total_attendance: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    overtime_wages: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    gross_wages: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    deduction_pf: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    deduction_esi: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    deduction_others: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    net_wages: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(IST).replace(tzinfo=None), 
+        onupdate=lambda: datetime.now(IST).replace(tzinfo=None),
+        nullable=False
+    )
+
+
 
 

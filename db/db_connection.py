@@ -53,10 +53,13 @@ class DatabaseManager:
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
+        self.pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+        self.max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+
         self.engine = create_async_engine(
             self.database_url,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=self.pool_size,
+            max_overflow=self.max_overflow,
             pool_recycle=1800,
             pool_pre_ping=True,
             echo=self.db_echo,

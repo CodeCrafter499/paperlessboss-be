@@ -36,12 +36,37 @@ def docx_download_url(employee_id: int) -> str:
 async def generate_letters_for_company(
     db: AsyncSession,
     company_id: uuid.UUID,
+    user_id: uuid.UUID,
     letterhead_id: Optional[uuid.UUID] = None,
 ) -> GenerateOfferLettersResponse:
+    from db.models import User, Company
+    user = await db.get(User, user_id)
+    company = await db.get(Company, company_id)
+    company_name = company.name if company else None
     employees = await get_employees_by_company(db, company_id)
     
-    # Load all existing offer letters for this company in a single batch query
+    if not user:
+        raise ValueError("User not found")
+        
+    if user.remaining_copies < len(employees):
+        raise ValueError(
+            f"Insufficient credits. You have {user.remaining_copies} remaining copies, "
+            f"but you are trying to generate letters for {len(employees)} employees."
+        )
+    
+    # Fetch signatory for signature / stamp inclusion
     from sqlalchemy import select
+    from db.models import AuthorisedSignatory
+    sig_result = await db.execute(select(AuthorisedSignatory).where(AuthorisedSignatory.user_id == user_id))
+    sig = sig_result.scalars().first()
+    
+    signature_image = None
+    stamp_image = None
+    if sig and sig.include_signature_stamp:
+        signature_image = sig.signature_image
+        stamp_image = sig.stamp_image
+
+    # Load all existing offer letters for this company in a single batch query
     from services.offer_letter.tables import OfferLetter
     stmt = select(OfferLetter).where(OfferLetter.company_id == company_id)
     res_letters = await db.execute(stmt)
@@ -72,17 +97,36 @@ async def generate_letters_for_company(
                     generate_appointment_pdf(
                         employee,
                         pdf_path,
-                        letterhead_pdf=letterhead.pdf_source
+                        header_path=str(letterhead.header_path) if letterhead.images_available else None,
+                        footer_path=str(letterhead.footer_path) if letterhead.images_available else None,
+                        signature_image=signature_image,
+                        stamp_image=stamp_image,
+                        company_name=company_name,
                     )
                     generate_appointment_docx(
                         employee,
                         docx_path,
                         header_bytes=letterhead.header_bytes,
-                        footer_bytes=letterhead.footer_bytes
+                        footer_bytes=letterhead.footer_bytes,
+                        signature_image=signature_image,
+                        stamp_image=stamp_image,
+                        company_name=company_name
                     )
                 else:
-                    generate_appointment_pdf(employee, pdf_path)
-                    generate_appointment_docx(employee, docx_path)
+                    generate_appointment_pdf(
+                        employee,
+                        pdf_path,
+                        signature_image=signature_image,
+                        stamp_image=stamp_image,
+                        company_name=company_name
+                    )
+                    generate_appointment_docx(
+                        employee,
+                        docx_path,
+                        signature_image=signature_image,
+                        stamp_image=stamp_image,
+                        company_name=company_name
+                    )
 
                 from services.offer_letter.tables import IST
                 from datetime import datetime
@@ -125,6 +169,8 @@ async def generate_letters_for_company(
         
         # Batch commit all inserts and updates in a single transaction
         if generated_count > 0:
+            user.remaining_copies = max(0, user.remaining_copies - generated_count)
+            db.add(user)
             try:
                 await db.commit()
             except Exception as commit_exc:

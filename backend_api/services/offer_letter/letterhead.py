@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, ImageChops
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,24 +22,37 @@ import shutil
 _has_poppler: Optional[bool] = None
 
 def check_poppler() -> bool:
-    global _has_poppler
-    if _has_poppler is not None:
-        return _has_poppler
-    
-    if shutil.which("pdftoppm") or shutil.which("pdfinfo"):
-        _has_poppler = True
-        return True
-        
     try:
-        subprocess.run(["pdftoppm", "-h"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _has_poppler = True
+        import fitz
         return True
-    except Exception:
-        _has_poppler = False
+    except ImportError:
         return False
+
+
+def trim_vertical_whitespace(img: Image.Image) -> Image.Image:
+    # If the image has an alpha channel, we can check if it has transparency
+    if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+        alpha = img.convert('RGBA').split()[-1]
+        bbox = alpha.getbbox()
+        if bbox:
+            # bbox is (left, top, right, bottom)
+            # return cropped image keeping full width and trimmed height
+            return img.crop((0, bbox[1], img.width, bbox[3]))
+
+    # Fallback: check for white background (or close to white)
+    rgb_img = img.convert('RGB')
+    bg = Image.new('RGB', rgb_img.size, (255, 255, 255))
+    diff = ImageChops.difference(rgb_img, bg)
+    # Thresholding to ignore very minor noise
+    diff = ImageChops.add(diff, diff, 2.0, -100)
+    bbox = diff.getbbox()
+    if bbox:
+        return img.crop((0, bbox[1], img.width, bbox[3]))
+    return img
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 LETTERHEAD_PDF_PATH = _BACKEND_ROOT / "assets" / "NIRL_Letter_Head_Mar_2026.pdf"
+_local_fallback_cache: Optional[dict] = None
 
 
 class ProcessedLetterhead:
@@ -56,29 +69,47 @@ class ProcessedLetterhead:
         self._process(source)
 
     def _process(self, source: str | Path | bytes) -> None:
+        global _local_fallback_cache
+        is_fallback = False
+        if isinstance(source, (str, Path)) and str(source) == str(LETTERHEAD_PDF_PATH):
+            is_fallback = True
+            if _local_fallback_cache is not None:
+                logger.info("Using cached local fallback letterhead images")
+                self.header_image = _local_fallback_cache["header_image"]
+                self.footer_image = _local_fallback_cache["footer_image"]
+                self.header_bytes = BytesIO(_local_fallback_cache["header_bytes_val"])
+                self.footer_bytes = BytesIO(_local_fallback_cache["footer_bytes_val"])
+                self.header_path = _local_fallback_cache["header_path"]
+                self.footer_path = _local_fallback_cache["footer_path"]
+                self.images_available = True
+                return
+
         if not check_poppler():
             logger.warning("Poppler is not installed. Skipping image extraction for DOCX/PDF header fallback.")
             return
 
         try:
-            from pdf2image import convert_from_bytes, convert_from_path
-
+            import fitz
             if isinstance(source, bytes):
-                pages = convert_from_bytes(source, dpi=150, first_page=1, last_page=1)
+                doc = fitz.open(stream=source, filetype="pdf")
             else:
-                pages = convert_from_path(str(source), dpi=150, first_page=1, last_page=1)
+                doc = fitz.open(str(source))
 
-            if not pages:
-                logger.warning("Letterhead PDF produced no pages.")
+            if doc.page_count == 0:
+                logger.warning("Letterhead PDF has no pages.")
                 return
 
-            page = pages[0]
-            width, height = page.size
+            page = doc.load_page(0)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+            img_data = pix.tobytes("png")
+            page_image = Image.open(BytesIO(img_data))
+            
+            width, height = page_image.size
             header_bottom = int(height * 0.35)
             footer_top = int(height * 0.90)
 
-            self.header_image = page.crop((0, 0, width, header_bottom))
-            self.footer_image = page.crop((0, footer_top, width, height))
+            self.header_image = trim_vertical_whitespace(page_image.crop((0, 0, width, header_bottom)))
+            self.footer_image = trim_vertical_whitespace(page_image.crop((0, footer_top, width, height)))
 
             self.header_bytes = BytesIO()
             self.footer_bytes = BytesIO()
@@ -97,10 +128,22 @@ class ProcessedLetterhead:
             self.footer_image.save(self.footer_path, format="PNG")
 
             self.images_available = True
+            if is_fallback:
+                _local_fallback_cache = {
+                    "header_image": self.header_image,
+                    "footer_image": self.footer_image,
+                    "header_bytes_val": self.header_bytes.getvalue(),
+                    "footer_bytes_val": self.footer_bytes.getvalue(),
+                    "header_path": self.header_path,
+                    "footer_path": self.footer_path
+                }
         except Exception as exc:
             logger.exception("Failed to process letterhead images: %s", exc)
 
     def cleanup(self) -> None:
+        if isinstance(self.pdf_source, (str, Path)) and str(self.pdf_source) == str(LETTERHEAD_PDF_PATH):
+            # Do not delete cached local fallback files
+            return
         try:
             if self.header_path and Path(self.header_path).exists():
                 Path(self.header_path).unlink()
@@ -201,13 +244,6 @@ async def get_processed_letterhead(
         except Exception as e:
             logger.error("Failed to download or process letterhead from Supabase: %s", e)
 
-    # Fallback to local letterhead PDF
-    if LETTERHEAD_PDF_PATH.is_file():
-        logger.info("Falling back to local letterhead PDF at %s", LETTERHEAD_PDF_PATH)
-        processed = ProcessedLetterhead(LETTERHEAD_PDF_PATH)
-        if processed.available:
-            return processed
-
     return None
 
 
@@ -236,20 +272,23 @@ def _load_letterhead() -> None:
         return
 
     try:
-        from pdf2image import convert_from_path
-
-        pages = convert_from_path(str(LETTERHEAD_PDF_PATH), dpi=150, first_page=1, last_page=1)
-        if not pages:
-            logger.warning("Letterhead PDF produced no pages at %s", LETTERHEAD_PDF_PATH)
+        import fitz
+        doc = fitz.open(str(LETTERHEAD_PDF_PATH))
+        if doc.page_count == 0:
+            logger.warning("Letterhead PDF has no pages at %s", LETTERHEAD_PDF_PATH)
             return
 
-        page = pages[0]
-        width, height = page.size
+        page = doc.load_page(0)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+        img_data = pix.tobytes("png")
+        page_image = Image.open(BytesIO(img_data))
+
+        width, height = page_image.size
         header_bottom = int(height * 0.35)
         footer_top = int(height * 0.90)
 
-        _header_image = page.crop((0, 0, width, header_bottom))
-        _footer_image = page.crop((0, footer_top, width, height))
+        _header_image = trim_vertical_whitespace(page_image.crop((0, 0, width, header_bottom)))
+        _footer_image = trim_vertical_whitespace(page_image.crop((0, footer_top, width, height)))
 
         _header_bytes = BytesIO()
         _footer_bytes = BytesIO()

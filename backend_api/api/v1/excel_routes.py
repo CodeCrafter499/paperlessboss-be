@@ -13,7 +13,7 @@ from api.v1.auth import get_current_user
 from api.deps import get_db_session
 from db.models import User, Employee
 from services.excel.validator import validate_excel
-from services.excel.utils import excel_value_to_str, normalize_numeric_id
+from services.excel.utils import excel_value_to_str, normalize_numeric_id, get_aliased_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -178,7 +178,7 @@ async def validate_excel_api(
         # Collect all unique Aadhaar numbers to query existing employees in one go
         aadhaar_list = []
         for index, row_data in df.iterrows():
-            row_dict = row_data.to_dict()
+            row_dict = {str(k).strip(): v for k, v in row_data.to_dict().items()}
             aadhaar_val = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12)
             if aadhaar_val:
                 aadhaar_list.append(aadhaar_val)
@@ -191,33 +191,33 @@ async def validate_excel_api(
 
         employees_to_add = []
         for index, row_data in df.iterrows():
-            row_dict = row_data.to_dict()
+            row_dict = {str(k).strip(): v for k, v in row_data.to_dict().items()}
             
-            emp_name = excel_value_to_str(row_dict.get("Name of employee", ""))
-            dob = parse_date_value(row_dict.get("Date of birth"))
-            father_mother = excel_value_to_str(row_dict.get("Father's / Mother's name", ""))
+            emp_name = excel_value_to_str(get_aliased_value(row_dict, "Name of employee", ""))
+            dob = parse_date_value(get_aliased_value(row_dict, "Date of birth"))
+            father_mother = excel_value_to_str(get_aliased_value(row_dict, "Father's / Mother's name", ""))
             
-            aadhaar_number = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12) or None
+            aadhaar_number = normalize_numeric_id(get_aliased_value(row_dict, "Aadhaar number", ""), 12) or None
             
-            lin_number = excel_value_to_str(row_dict.get("Labour Identification Number (LIN) of the establishment", ""))
+            lin_number = excel_value_to_str(get_aliased_value(row_dict, "Labour Identification Number (LIN) of the establishment", ""))
             
-            uan_val = normalize_numeric_id(row_dict.get("Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available)", ""), 12)
+            uan_val = normalize_numeric_id(get_aliased_value(row_dict, "Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available)", ""), 12)
             uan_number = uan_val if uan_val else None
             
-            designation = excel_value_to_str(row_dict.get("Designation", "")) or None
-            employment_type = excel_value_to_str(row_dict.get("Type of Employment", "")) or None
-            skill_category = excel_value_to_str(row_dict.get("Category of Skill", "")) or None
+            designation = excel_value_to_str(get_aliased_value(row_dict, "Designation", "")) or None
+            employment_type = excel_value_to_str(get_aliased_value(row_dict, "Type of Employment", "")) or None
+            skill_category = excel_value_to_str(get_aliased_value(row_dict, "Category of Skill", "")) or None
             
-            doj = parse_date_value(row_dict.get("Date of Joining"))
+            doj = parse_date_value(get_aliased_value(row_dict, "Date of Joining"))
             
-            basic_pay = parse_numeric_value(row_dict.get("Basic Pay"))
-            dearness_allowance = parse_numeric_value(row_dict.get("Dearness Allowance"))
-            other_allowance = parse_numeric_value(row_dict.get("Other Allowance"))
+            basic_pay = parse_numeric_value(get_aliased_value(row_dict, "Basic Pay"))
+            dearness_allowance = parse_numeric_value(get_aliased_value(row_dict, "Dearness Allowance"))
+            other_allowance = parse_numeric_value(get_aliased_value(row_dict, "Other Allowance"))
             
-            social_security = excel_value_to_str(row_dict.get("Applicability of social security benefits", "")) or None
-            duties = excel_value_to_str(row_dict.get("Broad nature of duties performed", "")) or None
-            benefits_chapter_vi = excel_value_to_str(row_dict.get("Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee)", "")) or None
-            other_info = excel_value_to_str(row_dict.get("Any other information", "")) or None
+            social_security = excel_value_to_str(get_aliased_value(row_dict, "Applicability of social security benefits", "")) or None
+            duties = excel_value_to_str(get_aliased_value(row_dict, "Broad nature of duties performed", "")) or None
+            benefits_chapter_vi = excel_value_to_str(get_aliased_value(row_dict, "Benefits available under chapter VI (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee)", "")) or None
+            other_info = excel_value_to_str(get_aliased_value(row_dict, "Any other information", "")) or None
             
             if aadhaar_number in existing_employees:
                 # Update existing record
