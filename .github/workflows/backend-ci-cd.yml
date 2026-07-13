@@ -26,6 +26,11 @@ jobs:
       env:
         ENVIRONMENT: "test"
         SECRET_KEY: "temporary_dev_test_key_for_github_actions_validation_bypass"
+        DB_HOST: "localhost"
+        DB_PORT: "5432"
+        DB_NAME: "testdb"
+        DB_USER: "postgres"
+        DB_PASS: "postgres"
       run: |
         pytest tests/
 

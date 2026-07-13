@@ -13,7 +13,7 @@ router = APIRouter()
 
 class PayRequest(BaseModel):
     amount: float
-    type: str = "offer_letter" # "offer_letter" or "wage_slip"
+    type: str = "offer_letter" # "offer_letter" or "wage_slips    "
 
 class PayResponse(BaseModel):
     amount: float
