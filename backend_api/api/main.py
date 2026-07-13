@@ -96,8 +96,8 @@ app = FastAPI(
 
 # Allowed production and development origins
 origins = [
-    # "https://paperlessboss.com",
-    # "https://www.paperlessboss.com",
+    "https://paperlessboss.com",
+    "https://www.paperlessboss.com",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:8000",
