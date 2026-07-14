@@ -60,5 +60,5 @@ jobs:
         key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
         script: |
           cd /home/ubuntu/app/backend
-          # Restart uvicorn containers using docker-compose
-          docker compose up --build -d
+          # Restart uvicorn containers using production docker-compose
+          docker compose -f docker-compose.prod.yml up --build -d
