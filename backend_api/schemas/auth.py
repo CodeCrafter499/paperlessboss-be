@@ -53,3 +53,11 @@ class UserOut(BaseModel):
         "from_attributes": True
     }
 
+
+class ContactRequest(BaseModel):
+    name: str
+    email: EmailStr
+    subject: str
+    message: str
+
+

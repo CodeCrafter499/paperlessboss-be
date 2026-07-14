@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from api.deps import get_db_session
-from schemas.auth import UserRegister, VerifyOTP, ResendOTP, UserLogin, TokenResponse, UserOut
+from schemas.auth import UserRegister, VerifyOTP, ResendOTP, UserLogin, TokenResponse, UserOut, ContactRequest
 from services import auth_service
 from services.auth_service import IST
 from core.security import create_access_token, verify_access_token, generate_refresh_token, hash_token
 from core.config import settings
 from db.models import User, RefreshToken
+from services.email import send_contact_email
 
 router = APIRouter()
 
@@ -220,4 +221,20 @@ async def logout(
 @router.get("/me", response_model=UserOut)
 async def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/contact")
+async def contact_us(
+    contact_data: ContactRequest,
+    background_tasks: BackgroundTasks
+):
+    background_tasks.add_task(
+        send_contact_email,
+        contact_data.name,
+        contact_data.email,
+        contact_data.subject,
+        contact_data.message
+    )
+    return {"message": "Thank you for getting in touch! We will get back to you shortly."}
+
 
