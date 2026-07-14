@@ -99,3 +99,4 @@ backend_api/core/.env
 .env.production
 
 generated_letters/
+load_test/
