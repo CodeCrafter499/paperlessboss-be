@@ -19,6 +19,9 @@ from services.offer_letter.field_definitions import (
 from io import BytesIO
 from typing import Optional
 from services.offer_letter.letterhead import get_footer_bytes, get_header_bytes
+import logging
+
+logger = logging.getLogger(__name__)
 
 FONT = "Arial"
 BODY_PT = Pt(10)
@@ -157,8 +160,8 @@ def generate_appointment_docx(
                 sig_bytes = base64.b64decode(b64_sig)
                 run = p.add_run()
                 run.add_picture(BytesIO(sig_bytes), width=DocxInches(1.5))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to render docx signature image: %s", e)
         if stamp_image:
             try:
                 b64_stamp = stamp_image.split(";base64,")[1] if ";base64," in stamp_image else stamp_image
@@ -166,8 +169,8 @@ def generate_appointment_docx(
                 p.add_run("        ")
                 run = p.add_run()
                 run.add_picture(BytesIO(stamp_bytes), width=DocxInches(0.8))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to render docx stamp image: %s", e)
     else:
         doc.add_paragraph()
 

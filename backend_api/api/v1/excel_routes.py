@@ -1,7 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 import uuid
-import urllib.request
-import urllib.error
+import requests
 import logging
 import json
 import io
@@ -34,18 +33,18 @@ def upload_to_supabase(file_bytes: bytes, filename: str, content_type: str) -> s
         "Content-Type": content_type
     }
     
-    req = urllib.request.Request(url, data=file_bytes, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req) as response:
-            return filename
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode("utf-8")
-        logger.error(f"Supabase upload failed: {error_msg}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to save file to Supabase Storage: {error_msg}"
-        )
+        response = requests.post(url, data=file_bytes, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.error(f"Supabase upload failed: {response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to save file to Supabase Storage: {response.text}"
+            )
+        return filename
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error(f"Supabase upload exception: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -68,28 +67,26 @@ def get_supabase_signed_url(filename: str, expires_in: int = 900) -> str:
         "Content-Type": "application/json"
     }
     
-    payload = json.dumps({"expiresIn": expires_in}).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req) as response:
-            resp_bytes = response.read()
-            resp_data = json.loads(resp_bytes.decode("utf-8"))
-            signed_url = resp_data.get("signedURL") or resp_data.get("signedUrl")
-            if not signed_url:
-                logger.error(f"Supabase response missing signed URL fields: {resp_data}")
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Invalid response from Supabase Storage service."
-                )
-            return signed_url
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode("utf-8")
-        logger.error(f"Supabase signed URL generation failed: {error_msg}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to generate signed URL from Supabase Storage: {error_msg}"
-        )
+        response = requests.post(url, json={"expiresIn": expires_in}, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.error(f"Supabase signed URL generation failed: {response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to generate signed URL from Supabase Storage: {response.text}"
+            )
+        resp_data = response.json()
+        signed_url = resp_data.get("signedURL") or resp_data.get("signedUrl")
+        if not signed_url:
+            logger.error(f"Supabase response missing signed URL fields: {resp_data}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Invalid response from Supabase Storage service."
+            )
+        return signed_url
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error(f"Supabase signed URL exception: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
