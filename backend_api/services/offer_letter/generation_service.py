@@ -40,7 +40,10 @@ async def generate_letters_for_company(
     letterhead_id: Optional[uuid.UUID] = None,
 ) -> GenerateOfferLettersResponse:
     from db.models import User, Company
-    user = await db.get(User, user_id)
+    from sqlalchemy import select
+    stmt_user = select(User).where(User.id == user_id).with_for_update()
+    res_user = await db.execute(stmt_user)
+    user = res_user.scalars().first()
     company = await db.get(Company, company_id)
     company_name = company.name if company else None
     employees = await get_employees_by_company(db, company_id)
