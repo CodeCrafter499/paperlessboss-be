@@ -95,6 +95,15 @@ class SignatoryBase(BaseModel):
     stamp_image: Optional[str] = None
     include_signature_stamp: Optional[bool] = False
 
+    @model_validator(mode="after")
+    def validate_image_sizes(self) -> "SignatoryBase":
+        max_chars = 682666  # ~500 KB limit for base64 strings
+        if self.signature_image and len(self.signature_image) > max_chars:
+            raise ValueError("Signature image exceeds the maximum size limit of 500 KB.")
+        if self.stamp_image and len(self.stamp_image) > max_chars:
+            raise ValueError("Stamp image exceeds the maximum size limit of 500 KB.")
+        return self
+
 class SignatoryCreate(SignatoryBase):
     name: str = Field(
         ...,
