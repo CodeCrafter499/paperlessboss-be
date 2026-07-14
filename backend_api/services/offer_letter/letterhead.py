@@ -2,8 +2,7 @@ import logging
 import os
 import uuid
 import tempfile
-import urllib.request
-import urllib.error
+import requests
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -168,18 +167,18 @@ def upload_letterhead_to_supabase(file_bytes: bytes, filename: str, content_type
         "Content-Type": content_type
     }
 
-    req = urllib.request.Request(url, data=file_bytes, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req) as response:
-            return filename
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode("utf-8")
-        logger.error("Supabase letterhead upload failed: %s", error_msg)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to save file to Supabase Storage: {error_msg}"
-        )
+        response = requests.post(url, data=file_bytes, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.error("Supabase letterhead upload failed: %s", response.text)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to save file to Supabase Storage: {response.text}"
+            )
+        return filename
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error("Supabase letterhead upload exception: %s", str(e))
         raise HTTPException(
             status_code=500,
@@ -200,13 +199,14 @@ def download_from_supabase(filename: str) -> bytes:
         "apikey": settings.SUPABASE_KEY,
     }
 
-    req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req) as response:
-            return response.read()
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode("utf-8")
-        logger.error("Supabase letterhead download failed: %s", error_msg)
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.error("Supabase letterhead download failed: %s", response.text)
+            response.raise_for_status()
+        return response.content
+    except Exception as e:
+        logger.error("Supabase letterhead download failed: %s", str(e))
         raise e
 
 

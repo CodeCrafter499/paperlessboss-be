@@ -19,12 +19,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     ENVIRONMENT: str = "production"
 
-    SUPABASE_URL: str = "https://skzceavurcikyajjtpar.supabase.co"
-    SUPABASE_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNremNlYXZ1cmNpa3lhamp0cGFyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDE0MjI2OCwiZXhwIjoyMDk1NzE4MjY4fQ.aAavN9OnKIMSN5_69b5xRgFbf4eNgp5IdUpCsVLX7M8"
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
     SUPABASE_BUCKET: str = "appointment_excel_files"
 
     def model_post_init(self, __context):
-        if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "super-secret-key-change-me-in-production-1234567890-paperlessboss":
+        if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "super-secret-key-change-me-in-production-1234567890-paperlessboss":  # nosec B105
             raise ValueError("CRITICAL SECURITY ERROR: SECRET_KEY must be set explicitly in production environment!")
             
         if self.EMAILS_FROM_EMAIL and self.EMAIL_PASS:

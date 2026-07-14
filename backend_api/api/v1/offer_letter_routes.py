@@ -73,8 +73,8 @@ async def generate_offer_letters(
                 pdf_path.unlink()
             if docx_path.is_file():
                 docx_path.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to clean up old letter files: %s", e)
     
     # Dispatch generation to background task
     background_tasks.add_task(
