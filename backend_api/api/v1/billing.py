@@ -2,14 +2,40 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from typing import Optional
 from api.deps import get_db_session
 from api.v1.auth import get_current_user
-from db.models import User, PaymentTransaction, BillingSetting
+from db.models import User, PaymentTransaction, BillingSetting, SubscriptionPlan
 import uuid
 from datetime import datetime
 from services.offer_letter.tables import IST
 
 router = APIRouter()
+
+class PlanResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    min_employees: int
+    max_employees: Optional[int] = None
+    price: float
+    is_custom: bool
+    is_active: bool
+    features: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PlanCreate(BaseModel):
+    name: str
+    min_employees: int
+    max_employees: Optional[int] = None
+    price: float
+    is_custom: bool = False
+    is_active: bool = True
+    features: str
+
 
 class PayRequest(BaseModel):
     amount: float
@@ -159,3 +185,101 @@ async def pay(
         remaining_copies=current_user.remaining_copies,
         remaining_wage_copies=current_user.remaining_wage_copies
     )
+
+
+@router.get("/plans", response_model=list[PlanResponse])
+async def get_plans(
+    active_only: bool = False,
+    db: AsyncSession = Depends(get_db_session)
+):
+    stmt = select(SubscriptionPlan)
+    if active_only:
+        stmt = stmt.where(SubscriptionPlan.is_active == True)
+    stmt = stmt.order_by(SubscriptionPlan.min_employees.asc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+@router.post("/plans", response_model=PlanResponse)
+async def create_plan(
+    plan_data: PlanCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.email != "admin@peperlessboss.com":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin access only."
+        )
+    
+    plan = SubscriptionPlan(
+        id=uuid.uuid4(),
+        name=plan_data.name,
+        min_employees=plan_data.min_employees,
+        max_employees=plan_data.max_employees,
+        price=plan_data.price,
+        is_custom=plan_data.is_custom,
+        is_active=plan_data.is_active,
+        features=plan_data.features,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+@router.put("/plans/{plan_id}", response_model=PlanResponse)
+async def update_plan(
+    plan_id: uuid.UUID,
+    plan_data: PlanCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.email != "admin@peperlessboss.com":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin access only."
+        )
+    
+    stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+    res = await db.execute(stmt)
+    plan = res.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    plan.name = plan_data.name
+    plan.min_employees = plan_data.min_employees
+    plan.max_employees = plan_data.max_employees
+    plan.price = plan_data.price
+    plan.is_custom = plan_data.is_custom
+    plan.is_active = plan_data.is_active
+    plan.features = plan_data.features
+    plan.updated_at = datetime.now(IST).replace(tzinfo=None)
+    
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+@router.delete("/plans/{plan_id}")
+async def delete_plan(
+    plan_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.email != "admin@peperlessboss.com":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin access only."
+        )
+    
+    stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+    res = await db.execute(stmt)
+    plan = res.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    await db.delete(plan)
+    await db.commit()
+    return {"message": "Plan deleted successfully"}
+

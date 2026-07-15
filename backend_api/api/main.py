@@ -70,6 +70,28 @@ async def lifespan(app: FastAPI):
                 for key, val in defaults:
                     await conn.execute(text("INSERT INTO billing_settings (key, value) VALUES (:key, :value);"), {"key": key, "value": val})
             await conn.run_sync(Base.metadata.create_all)
+            
+            # Seed subscription plans if empty
+            res_plans = await conn.execute(text("SELECT COUNT(*) FROM subscription_plans;"))
+            plans_count = res_plans.scalar()
+            if plans_count == 0:
+                import uuid
+                initial_plans = [
+                    (str(uuid.uuid4()), "Starter", 1, 25, 499.0, False, True, "Appointment Letters,Wage Slips,Email Support"),
+                    (str(uuid.uuid4()), "Professional", 26, 50, 749.0, False, True, "All Starter Features,Bulk Upload,Advanced Reports,Priority Support"),
+                    (str(uuid.uuid4()), "Growth", 51, 100, 999.0, False, True, "All Professional Features,Multi-Project Management,Dedicated Support"),
+                    (str(uuid.uuid4()), "Business", 101, 500, 1999.0, False, True, "All Growth Features,Advanced User Roles,Premium API Access"),
+                    (str(uuid.uuid4()), "Enterprise", 501, None, 0.0, True, True, "Unlimited Employees,All Business Features,Custom Integrations,SLA Support")
+                ]
+                for p_id, name, min_emp, max_emp, price, is_cust, is_act, feats in initial_plans:
+                    await conn.execute(
+                        text("""
+                            INSERT INTO subscription_plans (id, name, min_employees, max_employees, price, is_custom, is_active, features, created_at, updated_at)
+                            VALUES (:id, :name, :min_emp, :max_emp, :price, :is_cust, :is_act, :feats, NOW(), NOW());
+                        """),
+                        {"id": p_id, "name": name, "min_emp": min_emp, "max_emp": max_emp, "price": price, "is_cust": is_cust, "is_act": is_act, "feats": feats}
+                    )
+
             await conn.execute(text("ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;"))
         print(">>> Database initialized and tables synced successfully!")
     except Exception as e:

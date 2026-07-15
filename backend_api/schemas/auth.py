@@ -57,6 +57,7 @@ class UserOut(BaseModel):
 class ContactRequest(BaseModel):
     name: str
     email: EmailStr
+    mobile_no: str
     subject: str
     message: str
 
