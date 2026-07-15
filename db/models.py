@@ -372,5 +372,39 @@ class WageSlip(Base):
     )
 
 
+class SubscriptionPlan(Base):
+    __tablename__ = "subscription_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    min_employees: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_employees: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    features: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(IST).replace(tzinfo=None), 
+        onupdate=lambda: datetime.now(IST).replace(tzinfo=None),
+        nullable=False
+    )
+
+
+class ContactMessage(Base):
+    __tablename__ = "contact_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    mobile_no: Mapped[str] = mapped_column(String(20), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+
+
+
+
 
 

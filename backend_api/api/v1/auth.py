@@ -10,7 +10,7 @@ from services import auth_service
 from services.auth_service import IST
 from core.security import create_access_token, verify_access_token, generate_refresh_token, hash_token
 from core.config import settings
-from db.models import User, RefreshToken
+from db.models import User, RefreshToken, ContactMessage
 from services.email import send_contact_email
 
 router = APIRouter()
@@ -226,12 +226,26 @@ async def read_current_user(current_user: User = Depends(get_current_user)):
 @router.post("/contact")
 async def contact_us(
     contact_data: ContactRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
 ):
+    import uuid
+    contact_msg = ContactMessage(
+        id=uuid.uuid4(),
+        name=contact_data.name,
+        email=contact_data.email,
+        mobile_no=contact_data.mobile_no,
+        subject=contact_data.subject,
+        message=contact_data.message
+    )
+    db.add(contact_msg)
+    await db.commit()
+
     background_tasks.add_task(
         send_contact_email,
         contact_data.name,
         contact_data.email,
+        contact_data.mobile_no,
         contact_data.subject,
         contact_data.message
     )

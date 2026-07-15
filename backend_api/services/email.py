@@ -71,7 +71,7 @@ async def send_otp_email(email_to: str, otp: str) -> bool:
         return False
 
 
-async def send_contact_email(name: str, email_from: str, subject: str, message_text: str) -> bool:
+async def send_contact_email(name: str, email_from: str, mobile_no: str, subject: str, message_text: str) -> bool:
     subject_line = f"New Contact Request: {subject}"
     body = f"""
     <html>
@@ -80,6 +80,7 @@ async def send_contact_email(name: str, email_from: str, subject: str, message_t
             <h2 style="color: #4f46e5; margin-bottom: 16px;">New Contact Support Query</h2>
             <p><strong>Name:</strong> {name}</p>
             <p><strong>Email:</strong> {email_from}</p>
+            <p><strong>Mobile No:</strong> {mobile_no}</p>
             <p><strong>Subject:</strong> {subject}</p>
             <p><strong>Message:</strong></p>
             <div style="padding: 16px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; white-space: pre-wrap;">
@@ -102,7 +103,7 @@ async def send_contact_email(name: str, email_from: str, subject: str, message_t
         )
         print(f"\n=========================================================================")
         print(f"[EMAIL] [MOCK CONTACT EMAIL SENT] To: {email_to}")
-        print(f"[EMAIL] From: {email_from} ({name})")
+        print(f"[EMAIL] From: {email_from} ({name}) | Mobile: {mobile_no}")
         print(f"[EMAIL] Subject: {subject_line}")
         print(f"[EMAIL] Message: {message_text}")
         print(f"=========================================================================\n")
