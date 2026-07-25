@@ -251,4 +251,12 @@ async def contact_us(
     )
     return {"message": "Thank you for getting in touch! We will get back to you shortly."}
 
+@router.delete("/delete-account", status_code=status.HTTP_200_OK)
+async def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    await auth_service.delete_user_account(db, current_user.id)
+    return {"message": "Account successfully deleted."}
+
 
