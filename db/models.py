@@ -68,6 +68,8 @@ class User(Base):
     
     remaining_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     remaining_wage_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    agreed_to_terms: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    mobile_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
     
     company: Mapped[Optional[Company]] = relationship("Company", back_populates="users")
     authorised_signatory: Mapped[Optional[AuthorisedSignatory]] = relationship("AuthorisedSignatory", back_populates="user", uselist=False)
@@ -76,7 +78,7 @@ class AuthorisedSignatory(Base):
     __tablename__ = "authorised_signatories"
     
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     address: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     pan: Mapped[str | None] = mapped_column(String(10), nullable=True)

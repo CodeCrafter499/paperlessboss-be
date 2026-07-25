@@ -20,6 +20,8 @@ ISTDateTime = Annotated[
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+    mobile_no: str = Field(..., min_length=10, max_length=15, description="Mobile number")
+    agreed_to_terms: bool = Field(True, description="Whether the user agreed to the terms and conditions")
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -45,6 +47,7 @@ class TokenResponse(BaseModel):
 class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
+    mobile_no: str | None = None
     is_active: bool
     is_verified: bool
     created_at: ISTDateTime

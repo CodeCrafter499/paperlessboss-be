@@ -2,13 +2,13 @@ import secrets
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, and_, desc
+from sqlalchemy import select, and_, desc, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status, BackgroundTasks
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-from db.models import User, OTPVerification
+from db.models import User, OTPVerification, RefreshToken, AuthorisedSignatory, Company
 from schemas.auth import UserRegister, VerifyOTP, UserLogin
 from core.security import get_password_hash, verify_password
 from core.config import settings
@@ -54,6 +54,7 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
         else:
             await check_otp_cooldown(db, register_data.email)
             existing_user.hashed_password = get_password_hash(register_data.password)
+            existing_user.mobile_no = register_data.mobile_no
             existing_user.created_at = datetime.now(IST).replace(tzinfo=None)
             
             stmt_invalidate = (
@@ -91,10 +92,12 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
     new_user = User(
         email=register_data.email,
         hashed_password=hashed_pwd,
+        mobile_no=register_data.mobile_no,
         is_verified=False,
         is_active=True,
         remaining_copies=100,
-        remaining_wage_copies=100
+        remaining_wage_copies=100,
+        agreed_to_terms=register_data.agreed_to_terms
     )
     db.add(new_user)
     await db.flush()
@@ -254,3 +257,29 @@ async def authenticate_user(db: AsyncSession, login_data: UserLogin) -> User:
         )
         
     return user
+
+async def delete_user_account(db: AsyncSession, user_id) -> None:
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    company_id = user.company_id
+    
+    # Delete refresh tokens
+    await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
+    
+    # Delete signatory
+    await db.execute(delete(AuthorisedSignatory).where(AuthorisedSignatory.user_id == user_id))
+    
+    # Delete user
+    await db.delete(user)
+    
+    # Delete company (cascades to employees, wages, and letterheads)
+    if company_id:
+        company = (await db.execute(select(Company).where(Company.id == company_id))).scalars().first()
+        if company:
+            await db.delete(company)
+            
+    await db.commit()
