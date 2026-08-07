@@ -55,6 +55,11 @@ async def lifespan(app: FastAPI):
                     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
                 );
             """))
+            await conn.execute(text("ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS merchant_transaction_id VARCHAR(100) UNIQUE;"))
+            await conn.execute(text("ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS phonepe_transaction_id VARCHAR(100);"))
+            await conn.execute(text("ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PENDING';"))
+            await conn.execute(text("ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'offer_letter';"))
+            await conn.execute(text("ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_instrument TEXT;"))
             await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS billing_settings (
                     key VARCHAR(50) PRIMARY KEY,

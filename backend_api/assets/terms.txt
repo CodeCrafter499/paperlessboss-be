@@ -1,0 +1,176 @@
+TERMS & CONDITIONS
+Last Updated: 25 July 2026
+Welcome to PaperlessBoss ("Platform"), a proprietary concern owned and operated by Code Crafters ("Owner", "we", "our", or "us").
+By accessing or using this website, you agree to comply with these Terms and Conditions.
+If you do not agree, please do not use the Platform.
+
+1. About PaperlessBoss
+PaperlessBoss is an online software platform that enables employers, contractors and businesses to create, manage and store employee-related documents including appointment letters, wage slips and other workforce records.
+
+2. Eligibility
+You must be at least 18 years old and legally competent to enter into contracts.
+
+3. User Account
+Users are responsible for:
+Maintaining confidentiality of login credentials. 
+Ensuring information entered is accurate. 
+Restricting unauthorized access. 
+Users are responsible for all activities carried out through their accounts.
+
+4. User Responsibilities
+Users agree that:
+They have lawful authority to upload employee information. 
+Employee data uploaded belongs to their organization. 
+Information uploaded is accurate. 
+They will use the platform only for lawful purposes. 
+Users shall not upload false, misleading or unlawful information.
+
+5. Personal Data
+Users may upload:
+Employee name 
+Father's/Mother's name 
+Address 
+Mobile Number 
+Email 
+Aadhaar (if applicable) 
+PAN (if applicable) 
+Bank Details 
+Salary Details 
+Employment Information 
+The user represents that they have obtained all necessary permissions or lawful authority to upload such information.
+
+6. Intellectual Property
+All software, designs, logos, source code and content remain the exclusive property of PaperlessBoss.
+No user may:
+Copy 
+Reverse engineer 
+Sell 
+Redistribute 
+Modify 
+without written permission.
+
+7. Subscription
+Access is available on subscription basis.
+Subscriptions commence only after successful payment.
+
+8. No Refund Policy
+All subscription fees are non-refundable.
+No refund shall be provided for:
+Partial usage 
+Non-usage 
+User error 
+Subscription cancellation 
+Change of business requirements 
+Users are advised to evaluate the platform during any free trial offered before subscribing.
+
+9. Service Availability
+We strive for uninterrupted availability but do not guarantee continuous access.
+Maintenance, technical issues or force majeure events may occasionally affect service availability.
+
+10. Limitation of Liability
+PaperlessBoss shall not be liable for:
+Incorrect information entered by users. 
+Loss arising from reliance on generated documents without review. 
+Business losses. 
+Loss of profits. 
+Data loss due to user negligence. 
+Internet connectivity issues. 
+Government policy changes. 
+Our total liability shall not exceed the subscription amount paid by the user during the preceding 12 months.
+
+11. Document Accuracy
+PaperlessBoss generates documents based on information entered by users.
+Users are solely responsible for verifying all generated documents before issuing them.
+
+12. Compliance
+PaperlessBoss is a documentation management platform.
+Use of the Platform does not by itself guarantee compliance with any law or regulation. Users remain responsible for ensuring their practices meet applicable legal requirements.
+
+13. Termination
+We reserve the right to suspend or terminate accounts that:
+Violate these Terms. 
+Misuse the Platform. 
+Engage in fraudulent or unlawful activities. 
+
+14. Governing Law
+These Terms shall be governed by the laws of India.
+Courts having jurisdiction at Visakhapatnam, Andhra Pradesh (or your preferred jurisdiction) shall have exclusive jurisdiction over disputes.
+
+REFUND & CANCELLATION POLICY
+All payments made towards subscription plans are final.
+PaperlessBoss follows a strict No Refund Policy.
+Once payment is received:
+Subscription cannot be cancelled for refund. 
+No refund will be provided for unused periods. 
+No partial refunds are available. 
+Users may discontinue use at any time, but the subscription remains active until the end of the paid period.
+
+DISCLAIMER
+PaperlessBoss is a software platform intended to assist businesses in creating and managing employee-related documentation.
+The Platform does not provide legal, accounting, tax or employment advice.
+Users are responsible for:
+Verifying all generated documents. 
+Ensuring compliance with applicable laws. 
+Obtaining professional advice where necessary. 
+PaperlessBoss shall not be responsible for decisions made based on documents generated through the Platform.
+
+PRIVACY POLICY
+Information We Collect
+We may collect:
+Account Information
+Name 
+Company Name 
+Email 
+Mobile Number 
+Business Information
+GSTIN (if provided) 
+Address 
+Establishment Details 
+Employee Information
+Employee Name 
+Employee ID 
+Address 
+Mobile Number 
+Email 
+Salary Information 
+Employment Details 
+Identity information uploaded by the customer 
+Technical Information
+IP Address 
+Browser Type 
+Device Information 
+Login History 
+
+How We Use Information
+We use information to:
+Generate documents. 
+Store employee records. 
+Improve platform performance. 
+Provide customer support. 
+Maintain security. 
+Comply with legal obligations. 
+
+Data Sharing
+We do not sell personal data.
+Information may be shared only:
+With service providers supporting the Platform. 
+Where required by law. 
+With user consent. 
+
+Data Security
+We implement reasonable administrative, technical and organizational measures to protect data against unauthorized access, alteration, disclosure or destruction.
+However, no online system can guarantee absolute security.
+
+Data Retention
+Data is retained while the account remains active and for a reasonable period thereafter, or as required by law, unless deletion is requested and legally permissible.
+
+User Rights
+Subject to applicable law, users may request access to, correction of, or deletion of their account information. Where contractors upload employee information, they are responsible for addressing requests from their employees in accordance with applicable privacy laws.
+
+CONTACT
+PaperlessBoss
+Email:
+support@paperlessboss.com
+Website:
+www.paperlessboss.com
+

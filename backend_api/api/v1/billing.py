@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from db.models import User, PaymentTransaction, BillingSetting, SubscriptionPlan
 import uuid
 from datetime import datetime
 from services.offer_letter.tables import IST
+from services.phonepe import PhonePeClient
 
 router = APIRouter()
 
@@ -282,4 +283,214 @@ async def delete_plan(
     await db.delete(plan)
     await db.commit()
     return {"message": "Plan deleted successfully"}
+
+
+class PhonePeInitiateRequest(BaseModel):
+    amount: float
+    type: str = "offer_letter"  # "offer_letter" or "wage_slip"
+
+
+class PhonePeCallbackRequest(BaseModel):
+    response: str
+
+
+@router.post("/phonepe/initiate")
+async def initiate_phonepe_payment(
+    req: PhonePeInitiateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if req.amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Amount must be greater than zero."
+        )
+
+    cfg = await get_billing_config_from_db(db)
+    amount = float(req.amount)
+    tier2_threshold = float(cfg["tier2_threshold"])
+    tier2_copies = float(cfg["tier2_copies"])
+    tier1_threshold = float(cfg["tier1_threshold"])
+    tier1_copies = float(cfg["tier1_copies"])
+    base_rate = float(cfg["base_rate"])
+
+    if amount >= tier2_threshold:
+        rate = (tier2_threshold / tier2_copies) if tier2_copies > 0 else 9999.0
+        copies_added = int(amount / rate)
+    elif amount >= tier1_threshold:
+        rate = (tier1_threshold / tier1_copies) if tier1_copies > 0 else 9999.0
+        copies_added = int(amount / rate)
+    else:
+        copies_added = int(amount / base_rate) if base_rate > 0 else 0
+
+    if copies_added <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Paid amount is insufficient to purchase any copies."
+        )
+
+    merchant_tx_id = f"MTX{uuid.uuid4().hex[:18]}".upper()
+
+    transaction = PaymentTransaction(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        amount=req.amount,
+        copies_added=copies_added,
+        created_at=datetime.now(IST).replace(tzinfo=None),
+        merchant_transaction_id=merchant_tx_id,
+        status="PENDING",
+        type=req.type
+    )
+    db.add(transaction)
+    await db.commit()
+
+    phonepe_client = PhonePeClient()
+    try:
+        payment_response = phonepe_client.initiate_payment(
+            transaction_id=merchant_tx_id,
+            amount_in_rupees=req.amount,
+            user_id=str(current_user.id)
+        )
+    except Exception as e:
+        transaction.status = "FAILED"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PhonePe payment initiation failed: {str(e)}"
+        )
+
+    if payment_response.get("success") is True:
+        redirect_url = payment_response["data"]["instrumentResponse"]["redirectInfo"]["url"]
+        return {"redirect_url": redirect_url, "merchant_transaction_id": merchant_tx_id}
+    else:
+        transaction.status = "FAILED"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=payment_response.get("message", "Failed to initiate payment")
+        )
+
+
+@router.post("/phonepe/callback")
+async def phonepe_callback(
+    req: PhonePeCallbackRequest,
+    x_verify: str = Header(...),
+    db: AsyncSession = Depends(get_db_session)
+):
+    phonepe_client = PhonePeClient()
+    
+    is_valid = phonepe_client.verify_callback_signature(req.response, x_verify)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid request signature."
+        )
+        
+    data = phonepe_client.decode_callback_payload(req.response)
+    
+    if not data or "data" not in data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid callback payload format."
+        )
+        
+    tx_data = data["data"]
+    merchant_tx_id = tx_data.get("merchantTransactionId")
+    phonepe_tx_id = tx_data.get("transactionId")
+    code = data.get("code")
+    
+    stmt = select(PaymentTransaction).where(PaymentTransaction.merchant_transaction_id == merchant_tx_id)
+    res = await db.execute(stmt)
+    transaction = res.scalar_one_or_none()
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found."
+        )
+        
+    if phonepe_tx_id:
+        transaction.phonepe_transaction_id = phonepe_tx_id
+        
+    payment_instrument_data = tx_data.get("paymentInstrument", {})
+    if payment_instrument_data:
+        transaction.payment_instrument = str(payment_instrument_data)
+
+    if code == "PAYMENT_SUCCESS":
+        if transaction.status != "SUCCESS":
+            transaction.status = "SUCCESS"
+            stmt_user = select(User).where(User.id == transaction.user_id)
+            res_user = await db.execute(stmt_user)
+            user = res_user.scalar_one_or_none()
+            if user:
+                if transaction.type == "wage_slip":
+                    user.remaining_wage_copies += transaction.copies_added
+                else:
+                    user.remaining_copies += transaction.copies_added
+                db.add(user)
+    elif code in ["PAYMENT_ERROR", "PAYMENT_DECLINED", "TIMED_OUT"]:
+        transaction.status = "FAILED"
+    
+    db.add(transaction)
+    await db.commit()
+    return {"success": True}
+
+
+@router.get("/phonepe/status/{merchant_transaction_id}")
+async def get_phonepe_transaction_status(
+    merchant_transaction_id: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    stmt = select(PaymentTransaction).where(PaymentTransaction.merchant_transaction_id == merchant_transaction_id)
+    res = await db.execute(stmt)
+    transaction = res.scalar_one_or_none()
+    
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+        
+    if transaction.status == "PENDING":
+        phonepe_client = PhonePeClient()
+        try:
+            status_res = phonepe_client.check_status(merchant_transaction_id)
+            if status_res.get("success") is True:
+                code = status_res.get("code")
+                data_tx = status_res.get("data", {})
+                phonepe_tx_id = data_tx.get("transactionId")
+                
+                if phonepe_tx_id:
+                    transaction.phonepe_transaction_id = phonepe_tx_id
+                
+                instrument = data_tx.get("paymentInstrument")
+                if instrument:
+                    transaction.payment_instrument = str(instrument)
+                    
+                if code == "PAYMENT_SUCCESS" and transaction.status != "SUCCESS":
+                    transaction.status = "SUCCESS"
+                    stmt_user = select(User).where(User.id == transaction.user_id)
+                    res_user = await db.execute(stmt_user)
+                    user = res_user.scalar_one_or_none()
+                    if user:
+                        if transaction.type == "wage_slip":
+                            user.remaining_wage_copies += transaction.copies_added
+                        else:
+                            user.remaining_copies += transaction.copies_added
+                        db.add(user)
+                elif code in ["PAYMENT_ERROR", "PAYMENT_DECLINED", "TIMED_OUT"]:
+                    transaction.status = "FAILED"
+                
+                db.add(transaction)
+                await db.commit()
+        except Exception:
+            pass
+
+    return {
+        "id": transaction.id,
+        "merchant_transaction_id": transaction.merchant_transaction_id,
+        "phonepe_transaction_id": transaction.phonepe_transaction_id,
+        "amount": float(transaction.amount),
+        "copies_added": transaction.copies_added,
+        "status": transaction.status,
+        "type": transaction.type,
+        "created_at": transaction.created_at
+    }
 
