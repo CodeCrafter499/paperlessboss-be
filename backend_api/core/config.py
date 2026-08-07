@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_BUCKET: str = "appointment_excel_files"
 
+    PHONEPE_MID: str = "PGTESTPAYUAT86"
+    PHONEPE_SALT_KEY: str = "96434309-7796-489d-8924-ab56988a6076"
+    PHONEPE_SALT_INDEX: str = "1"
+    PHONEPE_BASE_URL: str = "https://api-preprod.phonepe.com/apis/pg-sandbox"
+    PHONEPE_REDIRECT_URL: str = "http://localhost:3000/payment-status"
+    PHONEPE_CALLBACK_URL: str = "http://localhost:8000/api/v1/billing/phonepe/callback"
+
     def model_post_init(self, __context):
         if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "super-secret-key-change-me-in-production-1234567890-paperlessboss":  # nosec B105
             raise ValueError("CRITICAL SECURITY ERROR: SECRET_KEY must be set explicitly in production environment!")
@@ -43,7 +50,7 @@ class Settings(BaseSettings):
             self.SMTP_PORT = 587
 
     model_config = {
-        "env_file": ".env",
+        "env_file": os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
         "extra": "ignore",
         "case_sensitive": True
     }

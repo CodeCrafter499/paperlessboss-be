@@ -259,4 +259,26 @@ async def delete_account(
     await auth_service.delete_user_account(db, current_user.id)
     return {"message": "Account successfully deleted."}
 
+import os
+
+@router.get("/paperlessboss/terms")
+async def get_paperlessboss_terms():
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
+    terms_path = os.path.join(assets_dir, "terms.txt")
+    if not os.path.exists(terms_path):
+        raise HTTPException(status_code=404, detail="Terms document not found")
+    with open(terms_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"content": content}
+
+@router.get("/paperlessboss/privacy")
+async def get_paperlessboss_privacy():
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
+    privacy_path = os.path.join(assets_dir, "privacy.txt")
+    if not os.path.exists(privacy_path):
+        raise HTTPException(status_code=404, detail="Privacy policy document not found")
+    with open(privacy_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"content": content}
+
 
