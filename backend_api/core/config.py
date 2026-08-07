@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     PHONEPE_BASE_URL: str = "https://api-preprod.phonepe.com/apis/pg-sandbox"
     PHONEPE_REDIRECT_URL: str = "http://localhost:3000/payment-status"
     PHONEPE_CALLBACK_URL: str = "http://localhost:8000/api/v1/billing/phonepe/callback"
+    PHONEPE_CLIENT_ID: str = ""
+    PHONEPE_CLIENT_SECRET: str = ""
 
     def model_post_init(self, __context):
         if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY == "super-secret-key-change-me-in-production-1234567890-paperlessboss":  # nosec B105
