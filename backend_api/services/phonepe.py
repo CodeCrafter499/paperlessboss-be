@@ -72,7 +72,7 @@ class PhonePeClient:
             "merchantTransactionId": transaction_id,
             "merchantUserId": user_id,
             "amount": amount_in_paise,
-            "redirectUrl": self.redirect_url,
+            "redirectUrl": f"{self.redirect_url}?transactionId={transaction_id}",
             "redirectMode": "REDIRECT",
             "callbackUrl": self.callback_url,
             "paymentInstrument": {
@@ -113,7 +113,7 @@ class PhonePeClient:
             "paymentFlow": {
                 "type": "PG_CHECKOUT",
                 "merchantUrls": {
-                    "redirectUrl": self.redirect_url
+                    "redirectUrl": f"{self.redirect_url}?transactionId={transaction_id}"
                 }
             }
         }
