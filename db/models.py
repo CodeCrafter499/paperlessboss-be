@@ -332,6 +332,11 @@ class PaymentTransaction(Base):
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     copies_added: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
+    merchant_transaction_id: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
+    phonepe_transaction_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", server_default="PENDING", nullable=False)
+    type: Mapped[str] = mapped_column(String(50), default="offer_letter", server_default="offer_letter", nullable=False)
+    payment_instrument: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship("User")
 
