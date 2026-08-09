@@ -135,6 +135,7 @@ async def generate_letters_for_company(
                 )
             elif status == "generated":
                 try:
+                    from db.models import GeneratedLetterLog
                     now = datetime.now(IST).replace(tzinfo=None)
                     existing = existing_letters.get(emp.id)
                     if existing:
@@ -151,6 +152,21 @@ async def generate_letters_for_company(
                         )
                         db.add(new_letter)
                         existing_letters[emp.id] = new_letter
+
+                    # Write to the Generation History log table
+                    log_entry = GeneratedLetterLog(
+                        user_id=user_id,
+                        employee_id=emp.id,
+                        company_id=company_id,
+                        employee_name=emp.employee_name,
+                        lin_number=emp.lin_number,
+                        designation=emp.designation,
+                        date_of_joining=emp.date_of_joining,
+                        format="both",
+                        downloaded=False,
+                        generated_at=now
+                    )
+                    db.add(log_entry)
 
                     generated_count += 1
 

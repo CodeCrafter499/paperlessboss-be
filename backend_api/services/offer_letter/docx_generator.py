@@ -28,6 +28,8 @@ BODY_PT = Pt(10)
 TITLE_PT = Pt(14)
 HEADING_PT = Pt(11)
 
+_DECODED_IMAGE_CACHE = {}
+
 
 def _set_run_font(run, *, bold=False, size=BODY_PT, underline=False):
     run.bold = bold
@@ -156,19 +158,21 @@ def generate_appointment_docx(
         p = add_body_paragraph()
         if signature_image:
             try:
-                b64_sig = signature_image.split(";base64,")[1] if ";base64," in signature_image else signature_image
-                sig_bytes = base64.b64decode(b64_sig)
+                if signature_image not in _DECODED_IMAGE_CACHE:
+                    b64_sig = signature_image.split(";base64,")[1] if ";base64," in signature_image else signature_image
+                    _DECODED_IMAGE_CACHE[signature_image] = base64.b64decode(b64_sig)
                 run = p.add_run()
-                run.add_picture(BytesIO(sig_bytes), width=DocxInches(1.5))
+                run.add_picture(BytesIO(_DECODED_IMAGE_CACHE[signature_image]), width=DocxInches(1.5))
             except Exception as e:
                 logger.warning("Failed to render docx signature image: %s", e)
         if stamp_image:
             try:
-                b64_stamp = stamp_image.split(";base64,")[1] if ";base64," in stamp_image else stamp_image
-                stamp_bytes = base64.b64decode(b64_stamp)
+                if stamp_image not in _DECODED_IMAGE_CACHE:
+                    b64_stamp = stamp_image.split(";base64,")[1] if ";base64," in stamp_image else stamp_image
+                    _DECODED_IMAGE_CACHE[stamp_image] = base64.b64decode(b64_stamp)
                 p.add_run("        ")
                 run = p.add_run()
-                run.add_picture(BytesIO(stamp_bytes), width=DocxInches(0.8))
+                run.add_picture(BytesIO(_DECODED_IMAGE_CACHE[stamp_image]), width=DocxInches(0.8))
             except Exception as e:
                 logger.warning("Failed to render docx stamp image: %s", e)
     else:

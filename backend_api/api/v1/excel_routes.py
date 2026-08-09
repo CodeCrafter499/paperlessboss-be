@@ -207,9 +207,9 @@ async def validate_excel_api(
             
             doj = parse_date_value(get_aliased_value(row_dict, "Date of Joining"))
             
-            basic_pay = parse_numeric_value(get_aliased_value(row_dict, "Basic Pay"))
-            dearness_allowance = parse_numeric_value(get_aliased_value(row_dict, "Dearness Allowance"))
-            other_allowance = parse_numeric_value(get_aliased_value(row_dict, "Other Allowance"))
+            basic_pay = excel_value_to_str(get_aliased_value(row_dict, "Basic Pay", "")) or None
+            dearness_allowance = excel_value_to_str(get_aliased_value(row_dict, "Dearness Allowance", "")) or None
+            other_allowance = excel_value_to_str(get_aliased_value(row_dict, "Other Allowance", "")) or None
             
             social_security = excel_value_to_str(get_aliased_value(row_dict, "Applicability of social security benefits", "")) or None
             duties = excel_value_to_str(get_aliased_value(row_dict, "Broad nature of duties performed", "")) or None
