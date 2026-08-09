@@ -72,6 +72,9 @@ def _content_top_spacer(has_header: bool) -> Spacer:
     return Spacer(1, 0.4 * cm)
 
 
+_DECODED_IMAGE_CACHE = {}
+
+
 def generate_appointment_pdf(
     employee: "EmployeeRecord",
     output_path: str | Path,
@@ -163,10 +166,10 @@ def generate_appointment_pdf(
     
     def get_image_flowable(b64_str: str, w, h):
         try:
-            if ";base64," in b64_str:
-                b64_str = b64_str.split(";base64,")[1]
-            img_data = base64.b64decode(b64_str)
-            return RLImage(BytesIO(img_data), width=w, height=h)
+            if b64_str not in _DECODED_IMAGE_CACHE:
+                data_str = b64_str.split(";base64,")[1] if ";base64," in b64_str else b64_str
+                _DECODED_IMAGE_CACHE[b64_str] = base64.b64decode(data_str)
+            return RLImage(BytesIO(_DECODED_IMAGE_CACHE[b64_str]), width=w, height=h)
         except Exception as e:
             return Spacer(1, h)
 

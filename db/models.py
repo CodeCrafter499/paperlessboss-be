@@ -191,16 +191,16 @@ class Employee(Base):
     )
 
     # Monetary Fields
-    basic_pay: Mapped[Optional[float]] = mapped_column(
-        Numeric(12, 2),
+    basic_pay: Mapped[Optional[str]] = mapped_column(
+        String(255),
         nullable=True
     )
-    dearness_allowance: Mapped[Optional[float]] = mapped_column(
-        Numeric(12, 2),
+    dearness_allowance: Mapped[Optional[str]] = mapped_column(
+        String(255),
         nullable=True
     )
-    other_allowance: Mapped[Optional[float]] = mapped_column(
-        Numeric(12, 2),
+    other_allowance: Mapped[Optional[str]] = mapped_column(
+        String(255),
         nullable=True
     )
 

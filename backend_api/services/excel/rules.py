@@ -69,20 +69,20 @@ VALIDATION_RULES = {
 
     "Basic Pay": {
         "required": False,
-        "type": "numeric",
-        "message": "basic pay should be a numeric value"
+        "type": "text",
+        "message": ""
     },
 
     "Dearness Allowance": {
         "required": False,
-        "type": "numeric",
-        "message": "dearness allowance should be a numeric value"
+        "type": "text",
+        "message": ""
     },
 
     "Other Allowance": {
         "required": False,
-        "type": "numeric",
-        "message": "other allowance should be a numeric value"
+        "type": "text",
+        "message": ""
     },
 
     "Applicability of social security benefits": {
