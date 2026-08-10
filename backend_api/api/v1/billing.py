@@ -58,6 +58,12 @@ class BillingConfigItem(BaseModel):
     tier1_threshold: float
     tier1_copies: int
     base_rate: float
+    overage_rate: float = 15.0          # ₹ per employee per month beyond plan limit
+    docx_addon_price: float = 299.0     # ₹ per month for editable DOCX appointment letters
+
+class PlanAddonsResponse(BaseModel):
+    overage_rate: float          # ₹ per employee per month beyond plan limit
+    docx_addon_price: float      # ₹ per month for editable DOCX appointment letters
 
 async def get_billing_config_from_db(db: AsyncSession) -> dict[str, float]:
     stmt = select(BillingSetting)
@@ -71,6 +77,8 @@ async def get_billing_config_from_db(db: AsyncSession) -> dict[str, float]:
         "tier1_threshold": 500.0,
         "tier1_copies": 20.0,
         "base_rate": 30.0,
+        "overage_rate": 15.0,
+        "docx_addon_price": 299.0,
     }
     for k, v in defaults.items():
         if k not in settings:
@@ -97,7 +105,20 @@ async def get_config(
         tier2_copies=int(cfg["tier2_copies"]),
         tier1_threshold=cfg["tier1_threshold"],
         tier1_copies=int(cfg["tier1_copies"]),
-        base_rate=cfg["base_rate"]
+        base_rate=cfg["base_rate"],
+        overage_rate=float(cfg["overage_rate"]),
+        docx_addon_price=float(cfg["docx_addon_price"])
+    )
+
+@router.get("/plan-addons", response_model=PlanAddonsResponse)
+async def get_plan_addons(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Returns overage rate and DOCX add-on price. Public endpoint — no auth required."""
+    cfg = await get_billing_config_from_db(db)
+    return PlanAddonsResponse(
+        overage_rate=float(cfg["overage_rate"]),
+        docx_addon_price=float(cfg["docx_addon_price"])
     )
 
 @router.post("/config", response_model=BillingConfigItem)
@@ -285,9 +306,106 @@ async def delete_plan(
     return {"message": "Plan deleted successfully"}
 
 
+class SubscriptionStatusResponse(BaseModel):
+    plan_name: Optional[str] = None
+    max_employees: int = 0
+    end_date: Optional[datetime] = None
+    is_active: bool = False
+    days_remaining: int = 0
+    has_docx_addon: bool = False
+    docx_addon_end_date: Optional[datetime] = None
+    is_docx_active: bool = False
+    company_employee_count: int = 0
+
+@router.get("/subscription", response_model=SubscriptionStatusResponse)
+async def get_user_subscription(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    now = datetime.now(IST).replace(tzinfo=None)
+    
+    is_plan_active = bool(
+        current_user.subscription_end_date and current_user.subscription_end_date >= now
+    )
+    days_remaining = max(0, (current_user.subscription_end_date - now).days) if (is_plan_active and current_user.subscription_end_date) else 0
+
+    is_docx_active = bool(
+        current_user.has_docx_addon and current_user.docx_addon_end_date and current_user.docx_addon_end_date >= now
+    )
+
+    emp_count = 0
+    if current_user.company_id:
+        from db.models import Employee
+        from sqlalchemy import func
+        count_stmt = select(func.count(Employee.id)).where(Employee.company_id == current_user.company_id)
+        res = await db.execute(count_stmt)
+        emp_count = res.scalar() or 0
+
+    return SubscriptionStatusResponse(
+        plan_name=current_user.subscription_plan_name,
+        max_employees=current_user.subscription_max_employees,
+        end_date=current_user.subscription_end_date,
+        is_active=is_plan_active,
+        days_remaining=days_remaining,
+        has_docx_addon=current_user.has_docx_addon,
+        docx_addon_end_date=current_user.docx_addon_end_date,
+        is_docx_active=is_docx_active,
+        company_employee_count=emp_count
+    )
+
+
+async def apply_successful_payment(user: User, transaction: PaymentTransaction, db: AsyncSession):
+    from datetime import timedelta
+    from sqlalchemy import select, or_, String
+    now = datetime.now(IST).replace(tzinfo=None)
+    tx_type = str(transaction.type).strip()
+
+    if tx_type.startswith("plan_"):
+        plan_identifier = tx_type.replace("plan_", "").strip()
+        stmt = select(SubscriptionPlan).where(
+            or_(
+                SubscriptionPlan.name.ilike(plan_identifier),
+                SubscriptionPlan.id.cast(String) == plan_identifier
+            )
+        )
+        res = await db.execute(stmt)
+        plan = res.scalars().first()
+
+        if plan:
+            user.subscription_plan_name = plan.name
+            user.subscription_max_employees = plan.max_employees or 999999
+            user.subscription_end_date = now + timedelta(days=30)
+        else:
+            user.subscription_plan_name = plan_identifier
+            user.subscription_max_employees = 25
+            user.subscription_end_date = now + timedelta(days=30)
+
+    elif tx_type.startswith("addon_overage_"):
+        try:
+            extra_employees = int(tx_type.replace("addon_overage_", "").strip())
+        except ValueError:
+            extra_employees = 0
+
+        if extra_employees > 0:
+            user.subscription_max_employees = max(user.subscription_max_employees, 0) + extra_employees
+            user.subscription_end_date = now + timedelta(days=30)
+
+    elif tx_type == "addon_docx":
+        user.has_docx_addon = True
+        user.docx_addon_end_date = now + timedelta(days=30)
+
+    else:
+        if tx_type == "wage_slip":
+            user.remaining_wage_copies += transaction.copies_added
+        else:
+            user.remaining_copies += transaction.copies_added
+
+    db.add(user)
+
+
 class PhonePeInitiateRequest(BaseModel):
     amount: float
-    type: str = "offer_letter"  # "offer_letter" or "wage_slip"
+    type: str = "plan_Starter"  # e.g. "plan_Starter", "plan_Growth", "addon_docx"
 
 
 class PhonePeCallbackRequest(BaseModel):
@@ -306,36 +424,13 @@ async def initiate_phonepe_payment(
             detail="Amount must be greater than zero."
         )
 
-    cfg = await get_billing_config_from_db(db)
-    amount = float(req.amount)
-    tier2_threshold = float(cfg["tier2_threshold"])
-    tier2_copies = float(cfg["tier2_copies"])
-    tier1_threshold = float(cfg["tier1_threshold"])
-    tier1_copies = float(cfg["tier1_copies"])
-    base_rate = float(cfg["base_rate"])
-
-    if amount >= tier2_threshold:
-        rate = (tier2_threshold / tier2_copies) if tier2_copies > 0 else 9999.0
-        copies_added = int(amount / rate)
-    elif amount >= tier1_threshold:
-        rate = (tier1_threshold / tier1_copies) if tier1_copies > 0 else 9999.0
-        copies_added = int(amount / rate)
-    else:
-        copies_added = int(amount / base_rate) if base_rate > 0 else 0
-
-    if copies_added <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Paid amount is insufficient to purchase any copies."
-        )
-
     merchant_tx_id = f"MTX{uuid.uuid4().hex[:18]}".upper()
 
     transaction = PaymentTransaction(
         id=uuid.uuid4(),
         user_id=current_user.id,
         amount=req.amount,
-        copies_added=copies_added,
+        copies_added=0,
         created_at=datetime.now(IST).replace(tzinfo=None),
         merchant_transaction_id=merchant_tx_id,
         status="PENDING",
@@ -423,11 +518,7 @@ async def phonepe_callback(
             res_user = await db.execute(stmt_user)
             user = res_user.scalar_one_or_none()
             if user:
-                if transaction.type == "wage_slip":
-                    user.remaining_wage_copies += transaction.copies_added
-                else:
-                    user.remaining_copies += transaction.copies_added
-                db.add(user)
+                await apply_successful_payment(user, transaction, db)
     elif code in ["PAYMENT_ERROR", "PAYMENT_DECLINED", "TIMED_OUT"]:
         transaction.status = "FAILED"
     
@@ -470,11 +561,7 @@ async def get_phonepe_transaction_status(
                     res_user = await db.execute(stmt_user)
                     user = res_user.scalar_one_or_none()
                     if user:
-                        if transaction.type == "wage_slip":
-                            user.remaining_wage_copies += transaction.copies_added
-                        else:
-                            user.remaining_copies += transaction.copies_added
-                        db.add(user)
+                        await apply_successful_payment(user, transaction, db)
                 elif code in ["PAYMENT_ERROR", "PAYMENT_DECLINED", "TIMED_OUT"]:
                     transaction.status = "FAILED"
                 
@@ -488,7 +575,6 @@ async def get_phonepe_transaction_status(
         "merchant_transaction_id": transaction.merchant_transaction_id,
         "phonepe_transaction_id": transaction.phonepe_transaction_id,
         "amount": float(transaction.amount),
-        "copies_added": transaction.copies_added,
         "status": transaction.status,
         "type": transaction.type,
         "created_at": transaction.created_at

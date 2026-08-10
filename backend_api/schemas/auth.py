@@ -51,6 +51,11 @@ class UserOut(BaseModel):
     is_active: bool
     is_verified: bool
     created_at: ISTDateTime
+    subscription_plan_name: str | None = None
+    subscription_max_employees: int = 0
+    subscription_end_date: ISTDateTime | None = None
+    has_docx_addon: bool = False
+    docx_addon_end_date: ISTDateTime | None = None
 
     model_config = {
         "from_attributes": True

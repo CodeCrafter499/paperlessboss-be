@@ -51,10 +51,19 @@ async def generate_letters_for_company(
     if not user:
         raise ValueError("User not found")
         
-    if user.remaining_copies < len(employees):
+    from datetime import datetime
+    from services.offer_letter.tables import IST
+    now = datetime.now(IST).replace(tzinfo=None)
+
+    is_subscription_active = bool(user.subscription_end_date and user.subscription_end_date >= now)
+    if not is_subscription_active:
         raise ValueError(
-            f"Insufficient credits. You have {user.remaining_copies} remaining copies, "
-            f"but you are trying to generate letters for {len(employees)} employees."
+            "Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits to generate letters."
+        )
+
+    if len(employees) > user.subscription_max_employees:
+        raise ValueError(
+            f"Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please upgrade your plan in Billing & Credits."
         )
     
     # Fetch signatory for signature / stamp inclusion
@@ -200,10 +209,8 @@ async def generate_letters_for_company(
                     )
                 )
 
-        # Bulk commit all records and decrement credits in a single transaction at the end!
+        # Commit all generated records in a single transaction
         if generated_count > 0:
-            user.remaining_copies = max(0, user.remaining_copies - generated_count)
-            db.add(user)
             try:
                 await db.commit()
             except Exception as commit_exc:

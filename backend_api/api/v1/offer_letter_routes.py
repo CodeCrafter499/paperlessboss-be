@@ -140,6 +140,8 @@ async def download_offer_letter_docx(
 ):
     from sqlalchemy import select
     from db.models import Employee
+    from datetime import datetime
+    from services.offer_letter.tables import IST
 
     emp_company_id = await db.scalar(
         select(Employee.company_id).where(Employee.id == employee_id)
@@ -149,6 +151,17 @@ async def download_offer_letter_docx(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this offer letter."
         )
+
+    now = datetime.now(IST).replace(tzinfo=None)
+    is_docx_active = bool(
+        current_user.has_docx_addon and current_user.docx_addon_end_date and current_user.docx_addon_end_date >= now
+    )
+    if not is_docx_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="DOCX format download requires the Editable DOCX Add-on (₹299/month). Please activate the add-on in Billing & Credits."
+        )
+
     return await _download_letter(db, employee_id, "docx", current_user)
 
 
