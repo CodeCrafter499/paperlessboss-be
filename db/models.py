@@ -70,6 +70,13 @@ class User(Base):
     remaining_wage_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     agreed_to_terms: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     mobile_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Subscription & Addon fields
+    subscription_plan_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    subscription_max_employees: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    subscription_end_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    has_docx_addon: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    docx_addon_end_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     
     company: Mapped[Optional[Company]] = relationship("Company", back_populates="users")
     authorised_signatory: Mapped[Optional[AuthorisedSignatory]] = relationship("AuthorisedSignatory", back_populates="user", uselist=False)

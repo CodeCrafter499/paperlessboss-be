@@ -64,10 +64,22 @@ async def validate_wage_excel_api(
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
         num_records = len(df)
-        if current_user.remaining_wage_copies < num_records:
+        
+        from datetime import datetime
+        from services.offer_letter.tables import IST
+        now = datetime.now(IST).replace(tzinfo=None)
+
+        is_sub_active = bool(current_user.subscription_end_date and current_user.subscription_end_date >= now)
+        if not is_sub_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits to generate wage slips."
+            )
+
+        if num_records > current_user.subscription_max_employees:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient credits. You have {current_user.remaining_wage_copies} remaining wage slip copies, but the file contains {num_records} rows."
+                detail=f"The Excel file contains {num_records} rows, which exceeds your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees. Please upgrade your plan in Billing & Credits."
             )
 
         # Fetch existing wage slips to perform updates instead of duplicate inserts
@@ -166,8 +178,6 @@ async def validate_wage_excel_api(
                 )
                 db.add(wage_slip)
 
-        current_user.remaining_wage_copies = max(0, current_user.remaining_wage_copies - num_records)
-        db.add(current_user)
         await db.commit()
     except Exception as e:
         logger.exception("Failed to save wage slips to DB")

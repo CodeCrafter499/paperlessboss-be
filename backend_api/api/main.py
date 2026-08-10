@@ -75,25 +75,52 @@ async def lifespan(app: FastAPI):
                     ("tier1_threshold", 500.0),
                     ("tier1_copies", 20.0),
                     ("base_rate", 30.0),
+                    ("overage_rate", 15.0),
+                    ("docx_addon_price", 299.0),
                 ]
                 for key, val in defaults:
                     await conn.execute(text("INSERT INTO billing_settings (key, value) VALUES (:key, :value);"), {"key": key, "value": val})
+            else:
+                # Ensure new keys exist even if billing_settings was already seeded
+                new_keys = [
+                    ("overage_rate", 15.0),
+                    ("docx_addon_price", 299.0),
+                ]
+                for key, val in new_keys:
+                    await conn.execute(
+                        text("INSERT INTO billing_settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING;"),
+                        {"key": key, "value": val}
+                    )
             await conn.run_sync(Base.metadata.create_all)
             
-            # Seed subscription plans (reset to ensure only the specified plan is present)
-            await conn.execute(text("DELETE FROM subscription_plans;"))
+            # Seed subscription plans — seed if table is empty OR if fewer than 6 plans exist
+            # (handles upgrades from old single-plan seed)
             import uuid
-            initial_plans = [
-                (str(uuid.uuid4()), "Starter", 1, 25, 499.0, False, True, "Bulk upload,Appointment Letters,Wage Slips,Email Support"),
-            ]
-            for p_id, name, min_emp, max_emp, price, is_cust, is_act, feats in initial_plans:
-                await conn.execute(
-                    text("""
-                        INSERT INTO subscription_plans (id, name, min_employees, max_employees, price, is_custom, is_active, features, created_at, updated_at)
-                        VALUES (:id, :name, :min_emp, :max_emp, :price, :is_cust, :is_act, :feats, NOW(), NOW());
-                    """),
-                    {"id": p_id, "name": name, "min_emp": min_emp, "max_emp": max_emp, "price": price, "is_cust": is_cust, "is_act": is_act, "feats": feats}
-                )
+            plan_count_res = await conn.execute(text("SELECT COUNT(*) FROM subscription_plans;"))
+            plan_count = plan_count_res.scalar()
+            if plan_count < 6:
+                # Clear any partial/stale plans and re-seed the full set
+                await conn.execute(text("DELETE FROM subscription_plans;"))
+                features_standard = "Bulk upload,Appointment Letters (PDF only),Wage Slips (PDF only),Email Support"
+                initial_plans = [
+                    # (id, name, min_employees, max_employees, price, is_custom, is_active, features)
+                    (str(uuid.uuid4()), "Starter",      1,    25,   499.0,  False, True, features_standard),
+                    (str(uuid.uuid4()), "Growth",       1,    50,   749.0,  False, True, features_standard),
+                    (str(uuid.uuid4()), "Professional", 1,   100,   999.0,  False, True, features_standard),
+                    (str(uuid.uuid4()), "Scale",        1,   500,  1499.0,  False, True, features_standard),
+                    (str(uuid.uuid4()), "Business",     1,  1000,  2500.0,  False, True, features_standard),
+                    (str(uuid.uuid4()), "Enterprise",   1001, None, 3000.0, True,  True, "Contact Sales"),
+                ]
+                for p_id, name, min_emp, max_emp, price, is_cust, is_act, feats in initial_plans:
+                    await conn.execute(
+                        text("""
+                            INSERT INTO subscription_plans (id, name, min_employees, max_employees, price, is_custom, is_active, features, created_at, updated_at)
+                            VALUES (:id, :name, :min_emp, :max_emp, :price, :is_cust, :is_act, :feats, NOW(), NOW());
+                        """),
+                        {"id": p_id, "name": name, "min_emp": min_emp, "max_emp": max_emp,
+                         "price": price, "is_cust": is_cust, "is_act": is_act, "feats": feats}
+                    )
+                print(f">>> Seeded {len(initial_plans)} subscription plans.")
 
             await conn.execute(text("ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;"))
             await conn.execute(text("ALTER TABLE employees ALTER COLUMN basic_pay TYPE VARCHAR(255) USING basic_pay::varchar;"))
