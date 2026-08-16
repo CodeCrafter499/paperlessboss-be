@@ -220,20 +220,41 @@ async def get_active_letterhead_pdf(
 @router.get("/company/letterheads/{letterhead_id}/pdf")
 async def get_letterhead_pdf(
     letterhead_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db_session)
 ):
     from sqlalchemy import select
     from fastapi.responses import Response
-    from db.models import CompanyLetterhead
+    from db.models import CompanyLetterhead, User
     from services.offer_letter.letterhead import download_from_supabase
+    from core.security import verify_access_token
 
-    if not current_user.company_id:
+    token_str = None
+    if authorization and authorization.startswith("Bearer "):
+        token_str = authorization.split(" ")[1]
+    elif token:
+        token_str = token
+
+    if not token_str:
+        raise HTTPException(status_code=401, detail="Authentication token required")
+
+    email = verify_access_token(token_str)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+    stmt = select(User).where(User.email == email)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    if not user.company_id:
         raise HTTPException(status_code=400, detail="User is not associated with a company")
 
     stmt = select(CompanyLetterhead).where(
         CompanyLetterhead.id == letterhead_id,
-        CompanyLetterhead.company_id == current_user.company_id
+        CompanyLetterhead.company_id == user.company_id
     )
     result = await db.execute(stmt)
     letterhead = result.scalar_one_or_none()
