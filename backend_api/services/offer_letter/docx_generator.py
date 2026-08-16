@@ -152,29 +152,40 @@ def generate_appointment_docx(
     run = p.add_run(f"For {company_name}")
     _set_run_font(run, bold=True)
 
-    if signature_image or stamp_image:
+    if (signature_image and signature_image.strip()) or (stamp_image and stamp_image.strip()):
         import base64
         from docx.shared import Inches as DocxInches
+        from PIL import Image
         p = add_body_paragraph()
-        if signature_image:
+        if signature_image and signature_image.startswith("data:"):
             try:
                 if signature_image not in _DECODED_IMAGE_CACHE:
                     b64_sig = signature_image.split(";base64,")[1] if ";base64," in signature_image else signature_image
-                    _DECODED_IMAGE_CACHE[signature_image] = base64.b64decode(b64_sig)
+                    raw_bytes = base64.b64decode(b64_sig)
+                    img = Image.open(BytesIO(raw_bytes))
+                    png_bytes = BytesIO()
+                    img.save(png_bytes, format="PNG")
+                    png_bytes.seek(0)
+                    _DECODED_IMAGE_CACHE[signature_image] = png_bytes.read()
                 run = p.add_run()
                 run.add_picture(BytesIO(_DECODED_IMAGE_CACHE[signature_image]), width=DocxInches(1.5))
             except Exception as e:
-                logger.warning("Failed to render docx signature image: %s", e)
-        if stamp_image:
+                logger.warning("Failed to render docx signature image: %r", e)
+        if stamp_image and stamp_image.startswith("data:"):
             try:
                 if stamp_image not in _DECODED_IMAGE_CACHE:
                     b64_stamp = stamp_image.split(";base64,")[1] if ";base64," in stamp_image else stamp_image
-                    _DECODED_IMAGE_CACHE[stamp_image] = base64.b64decode(b64_stamp)
+                    raw_bytes = base64.b64decode(b64_stamp)
+                    img = Image.open(BytesIO(raw_bytes))
+                    png_bytes = BytesIO()
+                    img.save(png_bytes, format="PNG")
+                    png_bytes.seek(0)
+                    _DECODED_IMAGE_CACHE[stamp_image] = png_bytes.read()
                 p.add_run("        ")
                 run = p.add_run()
                 run.add_picture(BytesIO(_DECODED_IMAGE_CACHE[stamp_image]), width=DocxInches(0.8))
             except Exception as e:
-                logger.warning("Failed to render docx stamp image: %s", e)
+                logger.warning("Failed to render docx stamp image: %r", e)
     else:
         doc.add_paragraph()
 

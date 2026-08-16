@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add backend_api directory to sys.path to resolve imports cleanly in development
+backend_api_dir = Path(__file__).resolve().parent.parent
+if str(backend_api_dir) not in sys.path:
+    sys.path.insert(0, str(backend_api_dir))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,8 +45,6 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_by UUID;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_copies INTEGER DEFAULT 0;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_wage_copies INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS agreed_to_terms BOOLEAN DEFAULT TRUE;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS mobile_no VARCHAR(20);"))
             await conn.execute(text("ALTER TABLE authorised_signatories DROP CONSTRAINT IF EXISTS authorised_signatories_user_id_fkey;"))

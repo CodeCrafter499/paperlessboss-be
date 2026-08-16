@@ -95,8 +95,6 @@ async def register_user(db: AsyncSession, register_data: UserRegister, backgroun
         mobile_no=register_data.mobile_no,
         is_verified=False,
         is_active=True,
-        remaining_copies=100,
-        remaining_wage_copies=100,
         agreed_to_terms=register_data.agreed_to_terms
     )
     db.add(new_user)

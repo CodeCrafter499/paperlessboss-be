@@ -11,6 +11,17 @@ from datetime import datetime
 from services.offer_letter.tables import IST
 from services.phonepe import PhonePeClient
 
+def add_one_month(d: datetime) -> datetime:
+    import calendar
+    month = d.month + 1
+    year = d.year
+    if month > 12:
+        month = 1
+        year += 1
+    max_day = calendar.monthrange(year, month)[1]
+    day = min(d.day, max_day)
+    return d.replace(year=year, month=month, day=day)
+
 router = APIRouter()
 
 class PlanResponse(BaseModel):
@@ -90,8 +101,8 @@ async def get_balance(
     current_user: User = Depends(get_current_user),
 ):
     return BalanceResponse(
-        remaining_copies=current_user.remaining_copies,
-        remaining_wage_copies=current_user.remaining_wage_copies
+        remaining_copies=0,
+        remaining_wage_copies=0
     )
 
 @router.get("/config", response_model=BillingConfigItem)
@@ -145,67 +156,15 @@ async def update_config(
     await db.commit()
     return cfg_data
 
-@router.post("/pay", response_model=PayResponse)
+@router.post("/pay")
 async def pay(
     req: PayRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if req.amount <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Amount must be greater than zero."
-        )
-
-    cfg = await get_billing_config_from_db(db)
-    
-    amount = float(req.amount)
-    tier2_threshold = float(cfg["tier2_threshold"])
-    tier2_copies = float(cfg["tier2_copies"])
-    tier1_threshold = float(cfg["tier1_threshold"])
-    tier1_copies = float(cfg["tier1_copies"])
-    base_rate = float(cfg["base_rate"])
-
-    if amount >= tier2_threshold:
-        rate = (tier2_threshold / tier2_copies) if tier2_copies > 0 else 9999.0
-        copies_added = int(amount / rate)
-    elif amount >= tier1_threshold:
-        rate = (tier1_threshold / tier1_copies) if tier1_copies > 0 else 9999.0
-        copies_added = int(amount / rate)
-    else:
-        copies_added = int(amount / base_rate) if base_rate > 0 else 0
-
-    if copies_added <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Paid amount is insufficient to purchase any offer letter copies."
-        )
-
-    # Update user balance
-    if req.type == "wage_slip":
-        current_user.remaining_wage_copies += copies_added
-    else:
-        current_user.remaining_copies += copies_added
-        
-    db.add(current_user)
-
-    # Log payment transaction
-    transaction = PaymentTransaction(
-        id=uuid.uuid4(),
-        user_id=current_user.id,
-        amount=req.amount,
-        copies_added=copies_added,
-        created_at=datetime.now(IST).replace(tzinfo=None)
-    )
-    db.add(transaction)
-    
-    await db.commit()
-
-    return PayResponse(
-        amount=req.amount,
-        copies_added=copies_added,
-        remaining_copies=current_user.remaining_copies,
-        remaining_wage_copies=current_user.remaining_wage_copies
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Direct copy purchase is deprecated. Please upgrade your subscription plan."
     )
 
 
@@ -374,11 +333,11 @@ async def apply_successful_payment(user: User, transaction: PaymentTransaction, 
         if plan:
             user.subscription_plan_name = plan.name
             user.subscription_max_employees = plan.max_employees or 999999
-            user.subscription_end_date = now + timedelta(days=30)
+            user.subscription_end_date = add_one_month(now)
         else:
             user.subscription_plan_name = plan_identifier
             user.subscription_max_employees = 25
-            user.subscription_end_date = now + timedelta(days=30)
+            user.subscription_end_date = add_one_month(now)
 
     elif tx_type.startswith("addon_overage_"):
         try:
@@ -388,17 +347,15 @@ async def apply_successful_payment(user: User, transaction: PaymentTransaction, 
 
         if extra_employees > 0:
             user.subscription_max_employees = max(user.subscription_max_employees, 0) + extra_employees
-            user.subscription_end_date = now + timedelta(days=30)
+            user.subscription_end_date = add_one_month(now)
 
     elif tx_type == "addon_docx":
         user.has_docx_addon = True
-        user.docx_addon_end_date = now + timedelta(days=30)
+        user.docx_addon_end_date = add_one_month(now)
 
     else:
-        if tx_type == "wage_slip":
-            user.remaining_wage_copies += transaction.copies_added
-        else:
-            user.remaining_copies += transaction.copies_added
+        # Legacy copies/credits are deprecated
+        pass
 
     db.add(user)
 

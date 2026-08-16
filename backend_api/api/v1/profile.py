@@ -214,14 +214,6 @@ async def get_active_letterhead_pdf(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to download active letterhead: {str(e)}")
 
-    # Fallback to local default letterhead PDF
-    if LETTERHEAD_PDF_PATH.is_file():
-        try:
-            with open(LETTERHEAD_PDF_PATH, "rb") as f:
-                return Response(content=f.read(), media_type="application/pdf")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to read local fallback letterhead: {str(e)}")
-
     raise HTTPException(status_code=404, detail="No active letterhead found")
 
 

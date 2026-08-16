@@ -23,6 +23,7 @@ from services.offer_letter.repository import (
 from services.offer_letter.storage import letter_paths, paths_exist
 
 logger = logging.getLogger(__name__)
+generation_errors = {}
 
 
 def pdf_download_url(employee_id: int) -> str:
@@ -58,12 +59,12 @@ async def generate_letters_for_company(
     is_subscription_active = bool(user.subscription_end_date and user.subscription_end_date >= now)
     if not is_subscription_active:
         raise ValueError(
-            "Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits to generate letters."
+            "Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Subscription to generate letters."
         )
 
     if len(employees) > user.subscription_max_employees:
         raise ValueError(
-            f"Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please upgrade your plan in Billing & Credits."
+            f"Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please upgrade your plan in Billing & Subscription."
         )
     
     # Fetch signatory for signature / stamp inclusion
@@ -78,9 +79,13 @@ async def generate_letters_for_company(
         signature_image = sig.signature_image
         stamp_image = sig.stamp_image
 
-    # Load all existing offer letters for this company in a single batch query
+    # Load all existing offer letters for these employees in a single batch query
     from services.offer_letter.tables import OfferLetter
-    stmt = select(OfferLetter).where(OfferLetter.company_id == company_id)
+    emp_ids = [emp.id for emp in employees]
+    if emp_ids:
+        stmt = select(OfferLetter).where(OfferLetter.employee_id.in_(emp_ids))
+    else:
+        stmt = select(OfferLetter).where(OfferLetter.company_id == company_id)
     res_letters = await db.execute(stmt)
     existing_letters = {ol.employee_id: ol for ol in res_letters.scalars().all()}
 
@@ -269,11 +274,14 @@ async def get_company_letter_status(
             )
         )
 
+    error_msg = generation_errors.get(company_id)
+
     return OfferLetterStatusResponse(
         company_id=company_id,
         total_employees=len(employees),
         ready_count=ready_count,
         employees=statuses,
+        error=error_msg,
     )
 
 
@@ -336,10 +344,12 @@ async def generate_letters_background_task(
     user_id: uuid.UUID,
     letterhead_id: Optional[uuid.UUID] = None
 ):
+    generation_errors[company_id] = None
     from db.db_connection import DatabaseManager
     db_mgr = DatabaseManager()
     async with db_mgr.session_scope() as db:
         try:
             await generate_letters_for_company(db, company_id, user_id, letterhead_id=letterhead_id)
         except Exception as e:
+            generation_errors[company_id] = str(e)
             logger.exception("Failed to run offer letter background generation task: %s", e)

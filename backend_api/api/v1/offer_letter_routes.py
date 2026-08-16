@@ -53,6 +53,24 @@ async def generate_offer_letters(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No employees found for this company",
         )
+    # Synchronously check subscription active status and employee limits
+    from datetime import datetime
+    from services.offer_letter.tables import IST
+    now = datetime.now(IST).replace(tzinfo=None)
+
+    is_subscription_active = bool(current_user.subscription_end_date and current_user.subscription_end_date >= now)
+    if not is_subscription_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Subscription to generate letters."
+        )
+
+    if len(employees) > current_user.subscription_max_employees:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Your company has {len(employees)} employees, which exceeds your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees. Please upgrade your plan in Billing & Subscription."
+        )
+
     letterhead_id = req_body.letterhead_id if req_body else None
     # Reset existing offer letter paths for this company so the status endpoint tracks fresh generation live
     from sqlalchemy import update
@@ -159,7 +177,7 @@ async def download_offer_letter_docx(
     if not is_docx_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="DOCX format download requires the Editable DOCX Add-on (₹299/month). Please activate the add-on in Billing & Credits."
+            detail="DOCX format download requires the Editable DOCX Add-on (₹299/month). Please activate the add-on in Billing & Subscription."
         )
 
     return await _download_letter(db, employee_id, "docx", current_user)
@@ -283,9 +301,11 @@ async def get_generation_history(
     from db.models import GeneratedLetterLog
     from schemas.offer_letter import GeneratedLetterLogResponseItem
 
-    # Count unique employees (by unique lin_number) for this user
+    # Count unique employees (by unique UAN number) for this user
+    from db.models import Employee
     count_stmt = (
-        select(func.count(func.distinct(GeneratedLetterLog.lin_number)))
+        select(func.count(func.distinct(Employee.uan_esic_number)))
+        .join(GeneratedLetterLog, GeneratedLetterLog.employee_id == Employee.id)
         .where(GeneratedLetterLog.user_id == current_user.id)
     )
     unique_count = await db.scalar(count_stmt) or 0

@@ -123,6 +123,7 @@ def parse_numeric_value(val):
 @router.post("/validate-excel")
 async def validate_excel_api(
     file: UploadFile = File(...),
+    check_limits: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
@@ -179,7 +180,89 @@ async def validate_excel_api(
             aadhaar_val = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12)
             if aadhaar_val:
                 aadhaar_list.append(aadhaar_val)
+
+        # Subscription Plan Overage Check
+        if check_limits:
+            import calendar
+            from services.offer_letter.tables import IST
+            from db.models import OfferLetter, GeneratedLetterLog, WageSlip
+            
+            now = datetime.now(IST).replace(tzinfo=None)
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            _, last_day = calendar.monthrange(now.year, now.month)
+            end_of_month = now.replace(day=last_day, hour=23, minute=59, second=59, microsecond=999999)
+
+            is_sub_active = bool(current_user.subscription_end_date and current_user.subscription_end_date >= now)
+            if not is_sub_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Subscription to upload and generate letters."
+                )
+
+            # Query all distinct employee Aadhaar numbers who had an OfferLetter generated/logged in the current month for the company
+            stmt_ol = select(Employee.aadhaar_number).join(OfferLetter).where(
+                OfferLetter.company_id == current_user.company_id,
+                OfferLetter.generated_at >= start_of_month,
+                OfferLetter.generated_at <= end_of_month
+            )
+            res_ol = await db.execute(stmt_ol)
+            generated_aadhaars = set(res_ol.scalars().all())
+
+            stmt_log = select(Employee.aadhaar_number).join(GeneratedLetterLog).where(
+                GeneratedLetterLog.company_id == current_user.company_id,
+                GeneratedLetterLog.generated_at >= start_of_month,
+                GeneratedLetterLog.generated_at <= end_of_month
+            )
+            res_log = await db.execute(stmt_log)
+            generated_aadhaars.update(res_log.scalars().all())
+
+            # Query all distinct employee names who had a WageSlip created in the current month for the company
+            stmt_ws = select(WageSlip.employee_name).where(
+                WageSlip.company_id == current_user.company_id,
+                WageSlip.created_at >= start_of_month,
+                WageSlip.created_at <= end_of_month
+            )
+            res_ws = await db.execute(stmt_ws)
+            wage_names = set(res_ws.scalars().all())
+
+            # Map wage names back to their Aadhaar numbers
+            if wage_names:
+                stmt_ws_emp = select(Employee.aadhaar_number).where(
+                    Employee.company_id == current_user.company_id,
+                    Employee.employee_name.in_(wage_names)
+                )
+                res_ws_emp = await db.execute(stmt_ws_emp)
+                generated_aadhaars.update(res_ws_emp.scalars().all())
+
+            # Remove None/empty strings
+            generated_aadhaars.discard(None)
+            generated_aadhaars.discard("")
+
+            # Count how many new Aadhaar numbers are in the uploaded Excel
+            excel_aadhaars_set = set(aadhaar_list)
+            new_aadhaars = excel_aadhaars_set - generated_aadhaars
+
+            total_projected_employees = len(generated_aadhaars) + len(new_aadhaars)
+
+            if total_projected_employees > current_user.subscription_max_employees:
+                extra_needed = total_projected_employees - current_user.subscription_max_employees
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Uploading these new employees will exceed your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees for this month. You have already generated {len(generated_aadhaars)} employees and are trying to add {len(new_aadhaars)} new employees. You currently need {extra_needed} additional employee slots to proceed. You can purchase additional employee slots at ₹15/employee/month in Billing & Subscription."
+                )
                 
+        if list(aadhaar_list):
+            from sqlalchemy import delete
+            delete_stmt = delete(Employee).where(
+                Employee.company_id == current_user.company_id,
+                Employee.aadhaar_number.not_in(aadhaar_list)
+            )
+        else:
+            from sqlalchemy import delete
+            delete_stmt = delete(Employee).where(Employee.company_id == current_user.company_id)
+        
+        await db.execute(delete_stmt)
+
         existing_employees = {}
         if aadhaar_list:
             existing_query = select(Employee).filter(Employee.aadhaar_number.in_(aadhaar_list))
@@ -287,6 +370,9 @@ async def validate_excel_api(
             db.add_all(employees_to_add)
         await db.commit()
         
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception as db_err:
         logger.error(f"Error storing employees into database: {str(db_err)}")
         await db.rollback()
