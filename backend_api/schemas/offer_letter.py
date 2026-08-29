@@ -35,6 +35,8 @@ class OfferLetterStatusResponse(BaseModel):
     total_employees: int
     ready_count: int
     employees: list[EmployeeLetterStatus]
+    status: Optional[str] = None
+    error: Optional[str] = None
 
 
 from datetime import date, datetime
@@ -54,6 +56,7 @@ class GeneratedLetterLogResponseItem(BaseModel):
     company_id: Optional[uuid.UUID] = None
     employee_name: str
     lin_number: str
+    uan_number: Optional[str] = None
     designation: Optional[str] = None
     date_of_joining: Optional[date] = None
     format: str

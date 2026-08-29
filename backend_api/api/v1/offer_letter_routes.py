@@ -283,9 +283,9 @@ async def get_generation_history(
     from db.models import GeneratedLetterLog
     from schemas.offer_letter import GeneratedLetterLogResponseItem
 
-    # Count unique employees (by unique lin_number) for this user
+    # Count unique employees (by unique uan_number) for this user
     count_stmt = (
-        select(func.count(func.distinct(GeneratedLetterLog.lin_number)))
+        select(func.count(func.distinct(GeneratedLetterLog.uan_number)))
         .where(GeneratedLetterLog.user_id == current_user.id)
     )
     unique_count = await db.scalar(count_stmt) or 0
@@ -309,6 +309,7 @@ async def get_generation_history(
             company_id=l.company_id,
             employee_name=l.employee_name,
             lin_number=l.lin_number,
+            uan_number=l.uan_number,
             designation=l.designation,
             date_of_joining=l.date_of_joining,
             format=l.format,

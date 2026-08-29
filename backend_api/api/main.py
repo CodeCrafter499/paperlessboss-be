@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP;"))
             await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS downloaded_by UUID;"))
+            await conn.execute(text("ALTER TABLE generated_letter_logs ADD COLUMN IF NOT EXISTS uan_number VARCHAR(255);"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_copies INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS remaining_wage_copies INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS agreed_to_terms BOOLEAN DEFAULT TRUE;"))

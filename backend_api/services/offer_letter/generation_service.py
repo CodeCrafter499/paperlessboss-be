@@ -24,6 +24,8 @@ from services.offer_letter.storage import letter_paths, paths_exist
 
 logger = logging.getLogger(__name__)
 
+ACTIVE_GENERATION_TASKS = {}
+
 
 def pdf_download_url(employee_id: int) -> str:
     return f"/offer-letters/download/{employee_id}/pdf"
@@ -61,10 +63,40 @@ async def generate_letters_for_company(
             "Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits to generate letters."
         )
 
-    if len(employees) > user.subscription_max_employees:
-        raise ValueError(
-            f"Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please upgrade your plan in Billing & Credits."
-        )
+    # 1. Fetch all unique UAN numbers that have ALREADY been generated for this company
+    from db.models import GeneratedLetterLog
+    stmt_unique_uans = select(GeneratedLetterLog.uan_number).where(
+        GeneratedLetterLog.company_id == company_id,
+        GeneratedLetterLog.uan_number != None
+    ).distinct()
+    res_unique_uans = await db.execute(stmt_unique_uans)
+    existing_unique_uans = {u for u in res_unique_uans.scalars().all() if u}
+
+    # 2. Identify how many NEW unique UAN numbers are being generated in this batch
+    new_uans = set()
+    for emp in employees:
+        if emp.uan_esic_number and emp.uan_esic_number not in existing_unique_uans:
+            new_uans.add(emp.uan_esic_number)
+
+    # 3. Calculate total unique employees (existing + new)
+    total_unique_employees = len(existing_unique_uans) + len(new_uans)
+
+    # 4. If total unique employees exceeds plan limit, check overage credits
+    if total_unique_employees > user.subscription_max_employees:
+        free_new_slots = max(0, user.subscription_max_employees - len(existing_unique_uans))
+        excess_new_employees = max(0, len(new_uans) - free_new_slots)
+        
+        if excess_new_employees > 0:
+            if user.remaining_copies >= excess_new_employees:
+                # Deduct credits from user
+                user.remaining_copies -= excess_new_employees
+            else:
+                raise ValueError(
+                    f"Your company has already generated letters for {len(existing_unique_uans)} unique employees. "
+                    f"Generating letters for {len(new_uans)} new employees would exceed your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} unique employees by {excess_new_employees} overage employee(s). "
+                    f"This requires {excess_new_employees} overage credits (15 Rs per employee), but you only have {user.remaining_copies} remaining copies. "
+                    f"Please buy more credits or upgrade your plan in Billing & Credits."
+                )
     
     # Fetch signatory for signature / stamp inclusion
     from sqlalchemy import select
@@ -89,6 +121,14 @@ async def generate_letters_for_company(
     existed_count = 0
 
     letterheads_cache = {}
+
+    # Pre-populate letterhead cache to avoid race conditions and duplicate downloads in concurrent workers
+    unique_signatories = {emp.authorised_signatory_id for emp in employees}
+    for sig_id in unique_signatories:
+        cache_key = (company_id, sig_id, letterhead_id)
+        letterheads_cache[cache_key] = await get_processed_letterhead(
+            db, company_id, sig_id, letterhead_id=letterhead_id
+        )
 
     import asyncio
     sem = asyncio.Semaphore(4)  # Limit concurrency to 4 worker threads
@@ -169,6 +209,7 @@ async def generate_letters_for_company(
                         company_id=company_id,
                         employee_name=emp.employee_name,
                         lin_number=emp.lin_number,
+                        uan_number=emp.uan_esic_number,
                         designation=emp.designation,
                         date_of_joining=emp.date_of_joining,
                         format="both",
@@ -269,11 +310,15 @@ async def get_company_letter_status(
             )
         )
 
+    task_info = ACTIVE_GENERATION_TASKS.get(company_id, {"status": "idle", "error": None})
+
     return OfferLetterStatusResponse(
         company_id=company_id,
         total_employees=len(employees),
         ready_count=ready_count,
         employees=statuses,
+        status=task_info["status"],
+        error=task_info["error"]
     )
 
 
@@ -336,10 +381,13 @@ async def generate_letters_background_task(
     user_id: uuid.UUID,
     letterhead_id: Optional[uuid.UUID] = None
 ):
+    ACTIVE_GENERATION_TASKS[company_id] = {"status": "running", "error": None}
     from db.db_connection import DatabaseManager
     db_mgr = DatabaseManager()
     async with db_mgr.session_scope() as db:
         try:
             await generate_letters_for_company(db, company_id, user_id, letterhead_id=letterhead_id)
+            ACTIVE_GENERATION_TASKS[company_id] = {"status": "success", "error": None}
         except Exception as e:
             logger.exception("Failed to run offer letter background generation task: %s", e)
+            ACTIVE_GENERATION_TASKS[company_id] = {"status": "failed", "error": str(e)}
