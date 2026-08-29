@@ -329,6 +329,7 @@ async def get_generation_history(
             company_id=l.company_id,
             employee_name=l.employee_name,
             lin_number=l.lin_number,
+            uan_number=l.uan_number,
             designation=l.designation,
             date_of_joining=l.date_of_joining,
             format=l.format,

@@ -66,6 +66,10 @@ def _add_header_footer_images(
         header_stream = get_header_bytes()
 
     if header_stream:
+        try:
+            header_stream.seek(0)
+        except Exception:
+            pass
         header = section.header
         header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
         run = header_para.add_run()

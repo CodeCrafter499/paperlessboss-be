@@ -55,6 +55,7 @@ class GeneratedLetterLogResponseItem(BaseModel):
     company_id: Optional[uuid.UUID] = None
     employee_name: str
     lin_number: str
+    uan_number: Optional[str] = None
     designation: Optional[str] = None
     date_of_joining: Optional[date] = None
     format: str

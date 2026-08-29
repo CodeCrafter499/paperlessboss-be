@@ -317,6 +317,7 @@ class GeneratedLetterLog(Base):
     company_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)
     employee_name: Mapped[str] = mapped_column(String(255), nullable=False)
     lin_number: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    uan_number: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     designation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     date_of_joining: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     format: Mapped[str] = mapped_column(String(50), nullable=False)  # 'docx', 'pdf', 'both'

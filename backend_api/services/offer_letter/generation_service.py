@@ -25,6 +25,8 @@ from services.offer_letter.storage import letter_paths, paths_exist
 logger = logging.getLogger(__name__)
 generation_errors = {}
 
+ACTIVE_GENERATION_TASKS = {}
+
 
 def pdf_download_url(employee_id: int) -> str:
     return f"/offer-letters/download/{employee_id}/pdf"
@@ -94,6 +96,14 @@ async def generate_letters_for_company(
     existed_count = 0
 
     letterheads_cache = {}
+
+    # Pre-populate letterhead cache to avoid race conditions and duplicate downloads in concurrent workers
+    unique_signatories = {emp.authorised_signatory_id for emp in employees}
+    for sig_id in unique_signatories:
+        cache_key = (company_id, sig_id, letterhead_id)
+        letterheads_cache[cache_key] = await get_processed_letterhead(
+            db, company_id, sig_id, letterhead_id=letterhead_id
+        )
 
     import asyncio
     sem = asyncio.Semaphore(4)  # Limit concurrency to 4 worker threads
@@ -174,6 +184,7 @@ async def generate_letters_for_company(
                         company_id=company_id,
                         employee_name=emp.employee_name,
                         lin_number=emp.lin_number,
+                        uan_number=emp.uan_esic_number,
                         designation=emp.designation,
                         date_of_joining=emp.date_of_joining,
                         format="both",
@@ -350,6 +361,8 @@ async def generate_letters_background_task(
     async with db_mgr.session_scope() as db:
         try:
             await generate_letters_for_company(db, company_id, user_id, letterhead_id=letterhead_id)
+            ACTIVE_GENERATION_TASKS[company_id] = {"status": "success", "error": None}
         except Exception as e:
             generation_errors[company_id] = str(e)
             logger.exception("Failed to run offer letter background generation task: %s", e)
+            ACTIVE_GENERATION_TASKS[company_id] = {"status": "failed", "error": str(e)}

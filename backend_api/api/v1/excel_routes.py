@@ -366,6 +366,19 @@ async def validate_excel_api(
                 )
                 employees_to_add.append(employee)
             
+        # Delete existing employees of this company that are not in the uploaded file
+        from sqlalchemy import delete
+        if aadhaar_list:
+            delete_stmt = delete(Employee).where(
+                Employee.company_id == current_user.company_id,
+                ~Employee.aadhaar_number.in_(aadhaar_list)
+            )
+        else:
+            delete_stmt = delete(Employee).where(
+                Employee.company_id == current_user.company_id
+            )
+        await db.execute(delete_stmt)
+
         if employees_to_add:
             db.add_all(employees_to_add)
         await db.commit()
