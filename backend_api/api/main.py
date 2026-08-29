@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add backend_api directory to sys.path to resolve imports cleanly in development
+backend_api_dir = Path(__file__).resolve().parent.parent
+if str(backend_api_dir) not in sys.path:
+    sys.path.insert(0, str(backend_api_dir))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

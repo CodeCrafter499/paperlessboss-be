@@ -66,8 +66,6 @@ class User(Base):
         onupdate=lambda: datetime.now(IST).replace(tzinfo=None)
     )
     
-    remaining_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    remaining_wage_copies: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     agreed_to_terms: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     mobile_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
 

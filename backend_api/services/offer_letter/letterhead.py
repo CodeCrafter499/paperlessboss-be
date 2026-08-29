@@ -154,7 +154,10 @@ class ProcessedLetterhead:
 
 def upload_letterhead_to_supabase(file_bytes: bytes, filename: str, content_type: str) -> str:
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Mocking upload path.")
+        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Saving file locally.")
+        local_file = Path("uploaded_letterheads") / filename
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        local_file.write_bytes(file_bytes)
         return filename
 
     bucket = settings.SUPABASE_BUCKET
@@ -188,7 +191,11 @@ def upload_letterhead_to_supabase(file_bytes: bytes, filename: str, content_type
 
 def download_from_supabase(filename: str) -> bytes:
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        raise ValueError("Supabase URL or Key is not configured.")
+        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Loading file locally.")
+        local_file = Path("uploaded_letterheads") / filename
+        if local_file.exists():
+            return local_file.read_bytes()
+        raise FileNotFoundError(f"Local letterhead file {filename} not found.")
 
     bucket = settings.SUPABASE_BUCKET
     supabase_url = settings.SUPABASE_URL.rstrip('/')

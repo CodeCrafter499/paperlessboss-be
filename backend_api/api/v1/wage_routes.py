@@ -30,6 +30,7 @@ def parse_numeric_value(val):
 @router.post("/validate-excel")
 async def validate_wage_excel_api(
     file: UploadFile = File(...),
+    check_limits: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
@@ -73,14 +74,68 @@ async def validate_wage_excel_api(
         if not is_sub_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits to generate wage slips."
+                detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Subscription to generate wage slips."
             )
 
-        if num_records > current_user.subscription_max_employees:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"The Excel file contains {num_records} rows, which exceeds your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees. Please upgrade your plan in Billing & Credits."
+        # Collect all unique employee names from the uploaded Excel
+        excel_names = []
+        for index, row_data in df.iterrows():
+            row_dict = {str(k).strip(): v for k, v in row_data.to_dict().items()}
+            emp_name = excel_value_to_str(get_aliased_value(row_dict, "1. Name of employee", ""))
+            if emp_name:
+                excel_names.append(emp_name)
+
+        # Subscription Plan Overage Check
+        if check_limits:
+            import calendar
+            from db.models import OfferLetter, GeneratedLetterLog, WageSlip, Employee
+            
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            _, last_day = calendar.monthrange(now.year, now.month)
+            end_of_month = now.replace(day=last_day, hour=23, minute=59, second=59, microsecond=999999)
+
+            # Query all distinct employee names who had an OfferLetter generated/logged in the current month for the company
+            stmt_ol = select(Employee.employee_name).join(OfferLetter).where(
+                OfferLetter.company_id == current_user.company_id,
+                OfferLetter.generated_at >= start_of_month,
+                OfferLetter.generated_at <= end_of_month
             )
+            res_ol = await db.execute(stmt_ol)
+            generated_names = set(res_ol.scalars().all())
+
+            stmt_log = select(GeneratedLetterLog.employee_name).where(
+                GeneratedLetterLog.company_id == current_user.company_id,
+                GeneratedLetterLog.generated_at >= start_of_month,
+                GeneratedLetterLog.generated_at <= end_of_month
+            )
+            res_log = await db.execute(stmt_log)
+            generated_names.update(res_log.scalars().all())
+
+            # Query all distinct employee names who had a WageSlip created in the current month for the company
+            stmt_ws = select(WageSlip.employee_name).where(
+                WageSlip.company_id == current_user.company_id,
+                WageSlip.created_at >= start_of_month,
+                WageSlip.created_at <= end_of_month
+            )
+            res_ws = await db.execute(stmt_ws)
+            generated_names.update(res_ws.scalars().all())
+
+            # Remove None/empty strings
+            generated_names.discard(None)
+            generated_names.discard("")
+
+            # Count how many new employee names are in the uploaded Excel
+            excel_names_set = set(excel_names)
+            new_names = excel_names_set - generated_names
+
+            total_projected_employees = len(generated_names) + len(new_names)
+
+            if total_projected_employees > current_user.subscription_max_employees:
+                extra_needed = total_projected_employees - current_user.subscription_max_employees
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Uploading these new employees will exceed your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees for this month. You have already generated {len(generated_names)} employees and are trying to add {len(new_names)} new employees. You currently need {extra_needed} additional employee slots to proceed. You can purchase additional employee slots at ₹15/employee/month in Billing & Subscription."
+                )
 
         # Fetch existing wage slips to perform updates instead of duplicate inserts
         existing_query = select(WageSlip).where(WageSlip.company_id == current_user.company_id)
@@ -179,6 +234,8 @@ async def validate_wage_excel_api(
                 db.add(wage_slip)
 
         await db.commit()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to save wage slips to DB")
         raise HTTPException(

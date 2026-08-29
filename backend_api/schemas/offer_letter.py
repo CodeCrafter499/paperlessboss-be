@@ -35,7 +35,6 @@ class OfferLetterStatusResponse(BaseModel):
     total_employees: int
     ready_count: int
     employees: list[EmployeeLetterStatus]
-    status: Optional[str] = None
     error: Optional[str] = None
 
 
