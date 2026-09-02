@@ -213,9 +213,10 @@ async def get_active_letterhead_pdf(
             pdf_bytes = download_from_supabase(letterhead.storage_file_location)
             return Response(content=pdf_bytes, media_type="application/pdf")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to download active letterhead: {str(e)}")
+            logger.warning("Could not load active letterhead file: %s", e)
+            raise HTTPException(status_code=404, detail="Active letterhead file is not available in storage. Please upload a new version.")
 
-    raise HTTPException(status_code=404, detail="No active letterhead found")
+    raise HTTPException(status_code=404, detail="No active letterhead found. Please upload a letterhead template.")
 
 
 @router.get("/company/letterheads/{letterhead_id}/pdf")
@@ -261,11 +262,12 @@ async def get_letterhead_pdf(
     letterhead = result.scalar_one_or_none()
 
     if not letterhead:
-        raise HTTPException(status_code=404, detail="Letterhead not found")
+        raise HTTPException(status_code=404, detail="Letterhead version not found in database")
 
     try:
         pdf_bytes = download_from_supabase(letterhead.storage_file_location)
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to download letterhead: {str(e)}")
+        logger.warning("Could not load letterhead file %s: %s", letterhead.storage_file_location, e)
+        raise HTTPException(status_code=404, detail=f"Letterhead file '{letterhead.filename}' not found in storage. Please upload a new version.")
 

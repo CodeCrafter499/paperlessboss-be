@@ -53,6 +53,7 @@ class GeneratedLetterLogResponseItem(BaseModel):
     id: uuid.UUID
     employee_id: Optional[int] = None
     company_id: Optional[uuid.UUID] = None
+    company_pan: Optional[str] = None
     employee_name: str
     lin_number: str
     uan_number: Optional[str] = None
@@ -78,6 +79,8 @@ class LogGenerationResponse(BaseModel):
 
 class GenerationHistoryResponse(BaseModel):
     unique_employees_count: int
+    company_pan: Optional[str] = None
+    company_name: Optional[str] = None
     logs: list[GeneratedLetterLogResponseItem]
 
 

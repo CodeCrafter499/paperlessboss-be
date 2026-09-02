@@ -153,11 +153,16 @@ class ProcessedLetterhead:
 
 
 def upload_letterhead_to_supabase(file_bytes: bytes, filename: str, content_type: str) -> str:
-    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Saving file locally.")
+    # Always save a local copy in uploaded_letterheads for immediate cache
+    try:
         local_file = Path("uploaded_letterheads") / filename
         local_file.parent.mkdir(parents=True, exist_ok=True)
         local_file.write_bytes(file_bytes)
+    except Exception as local_err:
+        logger.warning("Failed to save local letterhead copy: %s", local_err)
+
+    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Letterhead saved locally.")
         return filename
 
     bucket = settings.SUPABASE_BUCKET
@@ -172,29 +177,26 @@ def upload_letterhead_to_supabase(file_bytes: bytes, filename: str, content_type
 
     try:
         response = requests.post(url, data=file_bytes, headers=headers, timeout=30)
-        if response.status_code != 200:
-            logger.error("Supabase letterhead upload failed: %s", response.text)
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to save file to Supabase Storage: {response.text}"
-            )
+        if response.status_code not in (200, 201):
+            logger.warning("Supabase letterhead upload status %s: %s", response.status_code, response.text)
         return filename
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        logger.error("Supabase letterhead upload exception: %s", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error uploading file to storage: {str(e)}"
-        )
+        logger.warning("Supabase letterhead upload error: %s (local file retained)", str(e))
+        return filename
 
 
 def download_from_supabase(filename: str) -> bytes:
+    # 1. First check local disk cache
+    local_file = Path("uploaded_letterheads") / filename
+    if local_file.is_file():
+        return local_file.read_bytes()
+
+    # 2. Check simple filename in uploaded_letterheads
+    alt_local = Path("uploaded_letterheads") / Path(filename).name
+    if alt_local.is_file():
+        return alt_local.read_bytes()
+
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        logger.warning("SUPABASE_URL or SUPABASE_KEY not configured. Loading file locally.")
-        local_file = Path("uploaded_letterheads") / filename
-        if local_file.exists():
-            return local_file.read_bytes()
         raise FileNotFoundError(f"Local letterhead file {filename} not found.")
 
     bucket = settings.SUPABASE_BUCKET
@@ -208,12 +210,19 @@ def download_from_supabase(filename: str) -> bytes:
 
     try:
         response = requests.get(url, headers=headers, timeout=30)
-        if response.status_code != 200:
-            logger.error("Supabase letterhead download failed: %s", response.text)
-            response.raise_for_status()
-        return response.content
+        if response.status_code == 200:
+            # Cache locally for future instant reads
+            try:
+                local_file.parent.mkdir(parents=True, exist_ok=True)
+                local_file.write_bytes(response.content)
+            except Exception:
+                pass
+            return response.content
+
+        logger.warning("Supabase letterhead download returned status %s for '%s'", response.status_code, filename)
+        raise FileNotFoundError(f"Letterhead file '{filename}' was not found in storage.")
     except Exception as e:
-        logger.error("Supabase letterhead download failed: %s", str(e))
+        logger.warning("Supabase letterhead download failed for '%s': %s", filename, e)
         raise e
 
 

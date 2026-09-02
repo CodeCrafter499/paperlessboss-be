@@ -106,35 +106,46 @@ async def generate_letters_for_company(
         )
 
     import asyncio
-    sem = asyncio.Semaphore(4)  # Limit concurrency to 4 worker threads
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+    from schemas.employee import EmployeeRecord
+
+    loop = asyncio.get_running_loop()
+    pool = get_process_pool()
 
     async def worker(emp):
-        async with sem:
-            pdf_path, docx_path = letter_paths(company_id, emp.id)
-            existing = existing_letters.get(emp.id)
+        pdf_path, docx_path = letter_paths(company_id, emp.id)
+        existing = existing_letters.get(emp.id)
 
-            sig_id = emp.authorised_signatory_id
-            cache_key = (company_id, sig_id, letterhead_id)
-            if cache_key not in letterheads_cache:
-                letterheads_cache[cache_key] = await get_processed_letterhead(
-                    db, company_id, sig_id, letterhead_id=letterhead_id
-                )
-            letterhead = letterheads_cache[cache_key]
+        sig_id = emp.authorised_signatory_id
+        cache_key = (company_id, sig_id, letterhead_id)
+        letterhead = letterheads_cache.get(cache_key)
 
-            try:
-                await asyncio.to_thread(
-                    compile_single_employee,
-                    emp,
-                    pdf_path,
-                    docx_path,
-                    letterhead,
-                    signature_image,
-                    stamp_image,
-                    company_name
-                )
-                return "generated", emp, pdf_path, docx_path, None
-            except Exception as exc:
-                return "failed", emp, pdf_path, docx_path, exc
+        header_path_str = str(letterhead.header_path) if (letterhead and letterhead.images_available and letterhead.header_path) else None
+        footer_path_str = str(letterhead.footer_path) if (letterhead and letterhead.images_available and letterhead.footer_path) else None
+        header_bytes_raw = letterhead.header_bytes.getvalue() if (letterhead and letterhead.header_bytes) else None
+        footer_bytes_raw = letterhead.footer_bytes.getvalue() if (letterhead and letterhead.footer_bytes) else None
+
+        emp_record = EmployeeRecord.model_validate(emp).model_dump()
+
+        try:
+            await loop.run_in_executor(
+                pool,
+                compile_single_employee_worker,
+                emp_record,
+                str(pdf_path),
+                str(docx_path),
+                header_path_str,
+                footer_path_str,
+                header_bytes_raw,
+                footer_bytes_raw,
+                signature_image,
+                stamp_image,
+                company_name
+            )
+            return "generated", emp, pdf_path, docx_path, None
+        except Exception as exc:
+            return "failed", emp, pdf_path, docx_path, exc
 
     try:
         tasks = [asyncio.create_task(worker(emp)) for emp in employees]
@@ -311,6 +322,68 @@ async def resolve_download_path(
 
     name = await get_employee_name(db, employee_id)
     return Path(file_path), name or "Employee"
+
+
+from concurrent.futures import ProcessPoolExecutor
+import os
+
+_PROCESS_POOL: Optional[ProcessPoolExecutor] = None
+
+
+def get_process_pool() -> ProcessPoolExecutor:
+    global _PROCESS_POOL
+    if _PROCESS_POOL is None:
+        workers = min(os.cpu_count() or 4, 8)
+        _PROCESS_POOL = ProcessPoolExecutor(max_workers=workers)
+    return _PROCESS_POOL
+
+
+def compile_single_employee_worker(
+    emp_dict: dict,
+    pdf_path_str: str,
+    docx_path_str: str,
+    header_path_str: Optional[str],
+    footer_path_str: Optional[str],
+    header_bytes_val: Optional[bytes],
+    footer_bytes_val: Optional[bytes],
+    signature_image: Optional[str],
+    stamp_image: Optional[str],
+    company_name: Optional[str],
+):
+    from schemas.employee import EmployeeRecord
+    from services.offer_letter.pdf_generator import generate_appointment_pdf
+    from services.offer_letter.docx_generator import generate_appointment_docx
+    from io import BytesIO
+    from pathlib import Path
+
+    emp = EmployeeRecord(**emp_dict)
+    pdf_path = Path(pdf_path_str)
+    docx_path = Path(docx_path_str)
+
+    header_bytes = BytesIO(header_bytes_val) if header_bytes_val else None
+    footer_bytes = BytesIO(footer_bytes_val) if footer_bytes_val else None
+
+    # Generate PDF
+    generate_appointment_pdf(
+        emp,
+        pdf_path,
+        header_path=header_path_str,
+        footer_path=footer_path_str,
+        signature_image=signature_image,
+        stamp_image=stamp_image,
+        company_name=company_name,
+    )
+
+    # Generate DOCX
+    generate_appointment_docx(
+        emp,
+        docx_path,
+        header_bytes=header_bytes,
+        footer_bytes=footer_bytes,
+        signature_image=signature_image,
+        stamp_image=stamp_image,
+        company_name=company_name,
+    )
 
 
 def compile_single_employee(employee, pdf_path, docx_path, letterhead, signature_image, stamp_image, company_name):

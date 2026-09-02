@@ -183,6 +183,121 @@ async def download_offer_letter_docx(
     return await _download_letter(db, employee_id, "docx", current_user)
 
 
+from pydantic import BaseModel as _BaseModel
+
+class DownloadOfferZipRequest(_BaseModel):
+    format: str = "pdf"
+    employee_ids: Optional[list[int]] = None
+
+
+@router.post("/download-zip")
+async def download_offer_letters_zip(
+    payload: Optional[DownloadOfferZipRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if not current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your user account is not linked to any company profile."
+        )
+
+    from sqlalchemy import select, update
+    from db.models import Employee, Company, GeneratedLetterLog, IST
+    from services.offer_letter.storage import letter_paths
+    import io
+    import zipfile
+    import re
+    from datetime import datetime
+    from starlette.responses import StreamingResponse
+
+    req = payload or DownloadOfferZipRequest()
+    fmt = (req.format or "pdf").lower()
+    now = datetime.now(IST).replace(tzinfo=None)
+    is_docx_active = bool(
+        current_user.has_docx_addon and current_user.docx_addon_end_date and current_user.docx_addon_end_date >= now
+    )
+
+    if fmt in ("docx", "both") and not is_docx_active:
+        if fmt == "docx":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="DOCX format download requires the Editable DOCX Add-on (₹299/month)."
+            )
+        fmt = "pdf"
+
+    stmt = select(Employee).where(Employee.company_id == current_user.company_id)
+    if req.employee_ids and len(req.employee_ids) > 0:
+        stmt = stmt.where(Employee.id.in_(req.employee_ids))
+
+    res = await db.execute(stmt)
+    employees = res.scalars().all()
+
+    if not employees:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No employee records found.")
+
+    comp = await db.get(Company, current_user.company_id)
+    pan = (comp.pan if comp and comp.pan else "COMPANY").upper().strip()
+    pan = re.sub(r'[^A-Z0-9]', '', pan) or "COMPANY"
+    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+    zip_filename = f"{pan}_{timestamp_str}_Appointment_Letters.zip"
+
+    zip_buffer = io.BytesIO()
+    emp_ids_added = []
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for emp in employees:
+            pdf_p, docx_p = letter_paths(current_user.company_id, emp.id)
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', (emp.employee_name or f"Employee_{emp.id}").strip())
+
+            added = False
+            if fmt in ("pdf", "both") and pdf_p.is_file():
+                zf.write(pdf_p, arcname=f"Appointment_Letter_{safe_name}.pdf")
+                added = True
+            if fmt in ("docx", "both") and is_docx_active and docx_p.is_file():
+                zf.write(docx_p, arcname=f"Appointment_Letter_{safe_name}.docx")
+                added = True
+
+            if added:
+                emp_ids_added.append(emp.id)
+
+    if not emp_ids_added:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated letters found on server for these employees."
+        )
+
+    # Mark as downloaded in logs
+    if emp_ids_added:
+        try:
+            up_stmt = (
+                update(GeneratedLetterLog)
+                .where(
+                    GeneratedLetterLog.employee_id.in_(emp_ids_added),
+                    GeneratedLetterLog.user_id == current_user.id
+                )
+                .values(
+                    downloaded=True,
+                    downloaded_at=now,
+                    downloaded_by=current_user.id
+                )
+            )
+            await db.execute(up_stmt)
+            await db.commit()
+        except Exception as log_err:
+            logger.error(f"Failed to update download logs: {log_err}")
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
 async def _download_letter(db: AsyncSession, employee_id: int, fmt: str, current_user: User) -> FileResponse:
     try:
         file_path, employee_name = await resolve_download_path(db, employee_id, fmt)
@@ -320,6 +435,15 @@ async def get_generation_history(
     history_res = await db.execute(history_stmt)
     logs = history_res.scalars().all()
 
+    company_pan = None
+    company_name = None
+    if current_user.company_id:
+        from db.models import Company
+        comp = await db.get(Company, current_user.company_id)
+        if comp:
+            company_pan = comp.pan
+            company_name = comp.name
+
     res_logs = []
     for l in logs:
         email = l.downloaded_by_user.email if l.downloaded_by_user else None
@@ -327,6 +451,7 @@ async def get_generation_history(
             id=l.id,
             employee_id=l.employee_id,
             company_id=l.company_id,
+            company_pan=company_pan,
             employee_name=l.employee_name,
             lin_number=l.lin_number,
             uan_number=l.uan_number,
@@ -343,6 +468,8 @@ async def get_generation_history(
 
     return GenerationHistoryResponse(
         unique_employees_count=unique_count,
+        company_pan=company_pan,
+        company_name=company_name,
         logs=res_logs
     )
 
