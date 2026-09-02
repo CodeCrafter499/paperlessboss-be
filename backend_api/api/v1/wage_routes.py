@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from fastapi.responses import FileResponse
 from pathlib import Path
+from typing import Optional
 import uuid
 import logging
 import io
@@ -253,8 +254,6 @@ async def get_wage_history(
     if not current_user.company_id:
         return []
     
-    stmt = select(WageSlip).where(WageSlip.company_id == current_user.company_id).order_index = WageSlip.created_at.desc()
-    # Wait, SQLAlchemy order_by, not order_index:
     stmt = select(WageSlip).where(WageSlip.company_id == current_user.company_id).order_by(WageSlip.created_at.desc())
     res = await db.execute(stmt)
     return res.scalars().all()
@@ -297,3 +296,78 @@ async def download_wage_pdf(
         media_type="application/pdf",
         filename=pdf_path.name
     )
+
+
+from pydantic import BaseModel as _BaseModel
+
+class DownloadWageZipRequest(_BaseModel):
+    wage_ids: Optional[list[uuid.UUID]] = None
+
+
+@router.post("/download-zip")
+async def download_wages_zip(
+    payload: Optional[DownloadWageZipRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if not current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your user account is not linked to any company profile."
+        )
+
+    from db.models import Company, WageSlip, IST
+    import zipfile
+    import re
+    from datetime import datetime
+    from starlette.responses import StreamingResponse
+
+    comp_stmt = select(Company).where(Company.id == current_user.company_id)
+    comp_res = await db.execute(comp_stmt)
+    company = comp_res.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found.")
+
+    req = payload or DownloadWageZipRequest()
+    stmt = select(WageSlip).where(WageSlip.company_id == current_user.company_id)
+    if req.wage_ids and len(req.wage_ids) > 0:
+        stmt = stmt.where(WageSlip.id.in_(req.wage_ids))
+
+    res = await db.execute(stmt)
+    wage_slips = res.scalars().all()
+
+    if not wage_slips:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No wage slip records found.")
+
+    now = datetime.now(IST).replace(tzinfo=None)
+    pan = (company.pan if company.pan else "COMPANY").upper().strip()
+    pan = re.sub(r'[^A-Z0-9]', '', pan) or "COMPANY"
+    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+    zip_filename = f"{pan}_{timestamp_str}_Wage_Slips.zip"
+
+    temp_dir = Path("uploads/temp_wages_zip")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for ws in wage_slips:
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', (ws.employee_name or f"Employee_{ws.id}").strip())
+            temp_pdf = temp_dir / f"Wage_Slip_{safe_name}_{ws.id}.pdf"
+            try:
+                generate_wage_slip_pdf(ws, temp_pdf, company)
+                if temp_pdf.is_file():
+                    zf.write(temp_pdf, arcname=f"Wage_Slip_{safe_name}.pdf")
+                    temp_pdf.unlink(missing_ok=True)
+            except Exception as exc:
+                logger.error(f"Error generating wage slip PDF for {ws.employee_name}: {exc}")
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
