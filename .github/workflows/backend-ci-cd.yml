@@ -60,5 +60,12 @@ jobs:
         key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
         script: |
           cd /home/ubuntu/app/backend
-          # Restart uvicorn containers using production docker-compose
+          # Free disk space: clean dangling/unused docker images, buildkit cache, and temp files
+          docker system prune -af --volumes 2>/dev/null || docker system prune -af 2>/dev/null || true
+          docker builder prune -af 2>/dev/null || true
+          sudo journalctl --vacuum-time=1d 2>/dev/null || true
+          rm -rf uploads/temp_* 2>/dev/null || true
+          # Rebuild and restart uvicorn containers using production docker-compose
           docker compose -f docker-compose.prod.yml up --build -d
+          # Final prune of dangling build cache
+          docker builder prune -f 2>/dev/null || true
