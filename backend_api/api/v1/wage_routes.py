@@ -78,65 +78,59 @@ async def validate_wage_excel_api(
                 detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Subscription to generate wage slips."
             )
 
-        # Collect all unique employee names from the uploaded Excel
-        excel_names = []
-        for index, row_data in df.iterrows():
-            row_dict = {str(k).strip(): v for k, v in row_data.to_dict().items()}
-            emp_name = excel_value_to_str(get_aliased_value(row_dict, "1. Name of employee", ""))
-            if emp_name:
-                excel_names.append(emp_name)
 
-        # Subscription Plan Overage Check
-        if check_limits:
-            import calendar
-            from db.models import OfferLetter, GeneratedLetterLog, WageSlip, Employee
-            
-            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            _, last_day = calendar.monthrange(now.year, now.month)
-            end_of_month = now.replace(day=last_day, hour=23, minute=59, second=59, microsecond=999999)
+        from db.models import Employee
+        # Extract months and uploaded employee names from Excel
+        months_found = set()
+        uploaded_emp_names = set()
+        for _, r_data in df.iterrows():
+            r_dict = {str(k).strip(): v for k, v in r_data.to_dict().items()}
+            m_val = excel_value_to_str(get_aliased_value(r_dict, "6a. Wage month", "")).strip()
+            y_val = excel_value_to_str(get_aliased_value(r_dict, "6b. Wage Year", "")).strip()
+            if m_val:
+                months_found.add(f"{m_val} {y_val}".strip() if y_val else m_val)
+            emp_n = excel_value_to_str(get_aliased_value(r_dict, "1. Name of employee", "")).strip()
+            if emp_n:
+                uploaded_emp_names.add(emp_n)
 
-            # Query all distinct employee names who had an OfferLetter generated/logged in the current month for the company
-            stmt_ol = select(Employee.employee_name).join(OfferLetter).where(
-                OfferLetter.company_id == current_user.company_id,
-                OfferLetter.generated_at >= start_of_month,
-                OfferLetter.generated_at <= end_of_month
-            )
-            res_ol = await db.execute(stmt_ol)
-            generated_names = set(res_ol.scalars().all())
+        months_str = ", ".join(sorted(months_found)) if months_found else "this month"
+        plan_name = current_user.subscription_plan_name or "Growth"
+        plan_limit = current_user.subscription_max_employees or 0
 
-            stmt_log = select(GeneratedLetterLog.employee_name).where(
-                GeneratedLetterLog.company_id == current_user.company_id,
-                GeneratedLetterLog.generated_at >= start_of_month,
-                GeneratedLetterLog.generated_at <= end_of_month
-            )
-            res_log = await db.execute(stmt_log)
-            generated_names.update(res_log.scalars().all())
+        # Query existing registered employees for this company
+        emp_query = select(Employee.employee_name).where(Employee.company_id == current_user.company_id)
+        emp_res = await db.execute(emp_query)
+        existing_emp_names = {name.strip().lower() for name in emp_res.scalars().all() if name}
 
-            # Query all distinct employee names who had a WageSlip created in the current month for the company
-            stmt_ws = select(WageSlip.employee_name).where(
-                WageSlip.company_id == current_user.company_id,
-                WageSlip.created_at >= start_of_month,
-                WageSlip.created_at <= end_of_month
-            )
-            res_ws = await db.execute(stmt_ws)
-            generated_names.update(res_ws.scalars().all())
+        # Identify new employees not in the existing list
+        new_employees = [name for name in uploaded_emp_names if name.lower() not in existing_emp_names]
+        total_unique_employees = len(existing_emp_names.union({name.lower() for name in uploaded_emp_names}))
 
-            # Remove None/empty strings
-            generated_names.discard(None)
-            generated_names.discard("")
+        new_emp_sample = ", ".join(new_employees[:5])
+        if len(new_employees) > 5:
+            new_emp_sample += f", and {len(new_employees) - 5} more"
+        new_emp_clause = f" [{new_emp_sample}]" if new_emp_sample else ""
 
-            # Count how many new employee names are in the uploaded Excel
-            excel_names_set = set(excel_names)
-            new_names = excel_names_set - generated_names
-
-            total_projected_employees = len(generated_names) + len(new_names)
-
-            if total_projected_employees > current_user.subscription_max_employees:
-                extra_needed = total_projected_employees - current_user.subscription_max_employees
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Uploading these new employees will exceed your '{current_user.subscription_plan_name or 'Current'}' plan limit of {current_user.subscription_max_employees} employees for this month. You have already generated {len(generated_names)} employees and are trying to add {len(new_names)} new employees. You currently need {extra_needed} additional employee slots to proceed. You can purchase additional employee slots at ₹15/employee/month in Billing & Subscription."
+        # If there are new employees not in the existing list and the plan limit is reached/exceeded:
+        if plan_limit > 0 and len(new_employees) > 0 and (total_unique_employees > plan_limit or len(existing_emp_names) >= plan_limit):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Limit exceeded: {len(new_employees)} new employee(s) found for month ({months_str}){new_emp_clause} "
+                    f"that are not in your {plan_name} plan's {plan_limit} employee list. "
+                    f"Please enable flexible overage rate in the Billing & Credits page to cover additional employees."
                 )
+            )
+
+        if plan_limit > 0 and num_records > plan_limit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Limit exceeded: The Excel file contains {num_records} records for month ({months_str}), "
+                    f"which exceeds your '{plan_name}' plan limit of {plan_limit} employees. "
+                    f"Please enable flexible overage rate in the Billing & Credits page to cover additional employees."
+                )
+            )
 
         # Fetch existing wage slips to perform updates instead of duplicate inserts
         existing_query = select(WageSlip).where(WageSlip.company_id == current_user.company_id)
@@ -302,72 +296,121 @@ from pydantic import BaseModel as _BaseModel
 
 class DownloadWageZipRequest(_BaseModel):
     wage_ids: Optional[list[uuid.UUID]] = None
+    wage_month: Optional[str] = None
+    wage_year: Optional[int] = None
 
 
-@router.post("/download-zip")
-async def download_wages_zip(
-    payload: Optional[DownloadWageZipRequest] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+async def _download_wages_zip_impl(
+    wage_ids: Optional[list[uuid.UUID]],
+    wage_month: Optional[str],
+    wage_year: Optional[int],
+    current_user: User,
+    db: AsyncSession,
 ):
+    import io
+    import zipfile
+    from fastapi.responses import Response
+    from services.offer_letter.tables import IST
+    from datetime import datetime
+    import tempfile
+
     if not current_user.company_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Your user account is not linked to any company profile."
+            detail="Your account is not associated with a company profile."
         )
 
-    from db.models import Company, WageSlip, IST
-    import zipfile
-    import re
-    from datetime import datetime
-    from starlette.responses import StreamingResponse
-
+    # Fetch company
     comp_stmt = select(Company).where(Company.id == current_user.company_id)
     comp_res = await db.execute(comp_stmt)
     company = comp_res.scalar_one_or_none()
     if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found.")
+        raise HTTPException(status_code=404, detail="Company profile not found.")
 
-    req = payload or DownloadWageZipRequest()
+    # Query wage slips
     stmt = select(WageSlip).where(WageSlip.company_id == current_user.company_id)
-    if req.wage_ids and len(req.wage_ids) > 0:
-        stmt = stmt.where(WageSlip.id.in_(req.wage_ids))
+    if wage_ids and len(wage_ids) > 0:
+        stmt = stmt.where(WageSlip.id.in_(wage_ids))
+    if wage_month and wage_month.strip():
+        stmt = stmt.where(WageSlip.wage_month.ilike(wage_month.strip()))
+    if wage_year:
+        stmt = stmt.where(WageSlip.wage_year == wage_year)
+    stmt = stmt.order_by(WageSlip.employee_name.asc())
 
     res = await db.execute(stmt)
-    wage_slips = res.scalars().all()
-
-    if not wage_slips:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No wage slip records found.")
-
-    now = datetime.now(IST).replace(tzinfo=None)
-    pan = (company.pan if company.pan else "COMPANY").upper().strip()
-    pan = re.sub(r'[^A-Z0-9]', '', pan) or "COMPANY"
-    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-    zip_filename = f"{pan}_{timestamp_str}_Wage_Slips.zip"
-
-    temp_dir = Path("uploads/temp_wages_zip")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    slips = res.scalars().all()
+    if not slips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No wage slips found matching the selected period."
+        )
 
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for ws in wage_slips:
-            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', (ws.employee_name or f"Employee_{ws.id}").strip())
-            temp_pdf = temp_dir / f"Wage_Slip_{safe_name}_{ws.id}.pdf"
-            try:
-                generate_wage_slip_pdf(ws, temp_pdf, company)
-                if temp_pdf.is_file():
-                    zf.write(temp_pdf, arcname=f"Wage_Slip_{safe_name}.pdf")
-                    temp_pdf.unlink(missing_ok=True)
-            except Exception as exc:
-                logger.error(f"Error generating wage slip PDF for {ws.employee_name}: {exc}")
+    seen_names = set()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for slip in slips:
+                safe_name = slip.employee_name.replace(" ", "_")[:50]
+                period = f"{slip.wage_month or ''}_{slip.wage_year or ''}".strip("_")
+                base_arc = f"Wage_Slip_{safe_name}_{period}"
+                arc = f"{base_arc}.pdf"
+                if arc in seen_names:
+                    emp_tag = f"_{slip.uan}" if slip.uan else f"_{slip.id}"
+                    arc = f"{base_arc}{emp_tag}.pdf"
+                counter = 1
+                while arc in seen_names:
+                    arc = f"{base_arc}_{counter}.pdf"
+                    counter += 1
+                seen_names.add(arc)
+                pdf_file = tmp_path / arc
+                try:
+                    generate_wage_slip_pdf(slip, pdf_file, company)
+                    if pdf_file.is_file():
+                        zf.write(pdf_file, arcname=arc)
+                except Exception as exc:
+                    logger.warning("Failed to generate wage slip PDF for %s: %s", slip.employee_name, exc)
 
     zip_buffer.seek(0)
-    return StreamingResponse(
-        zip_buffer,
+    month_label = f"_{wage_month}" if wage_month else ""
+    year_label = f"_{wage_year}" if wage_year else ""
+    zip_filename = f"Wage_Slips{month_label}{year_label}.zip"
+
+    return Response(
+        content=zip_buffer.getvalue(),
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{zip_filename}"',
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
+
+
+@router.get("/download-zip")
+async def download_wages_zip_get(
+    wage_month: Optional[str] = None,
+    wage_year: Optional[int] = None,
+    wage_ids: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    parsed_ids = None
+    if wage_ids and wage_ids.strip():
+        try:
+            parsed_ids = [uuid.UUID(x.strip()) for x in wage_ids.split(",") if x.strip()]
+        except Exception:
+            pass
+    return await _download_wages_zip_impl(parsed_ids, wage_month, wage_year, current_user, db)
+
+
+@router.post("/download-zip")
+async def download_wages_zip_post(
+    payload: Optional[DownloadWageZipRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    w_ids = payload.wage_ids if payload else None
+    w_month = payload.wage_month if payload else None
+    w_year = payload.wage_year if payload else None
+    return await _download_wages_zip_impl(w_ids, w_month, w_year, current_user, db)
 

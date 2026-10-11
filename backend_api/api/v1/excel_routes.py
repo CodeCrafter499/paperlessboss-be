@@ -265,9 +265,57 @@ async def validate_excel_api(
 
         existing_employees = {}
         if aadhaar_list:
-            existing_query = select(Employee).filter(Employee.aadhaar_number.in_(aadhaar_list))
+            existing_query = select(Employee).filter(
+                Employee.company_id == current_user.company_id,
+                Employee.aadhaar_number.in_(aadhaar_list)
+            )
             res = await db.scalars(existing_query)
             existing_employees = {emp.aadhaar_number: emp for emp in res.all()}
+
+        # Check subscription plan limits for new employees
+        plan_limit = current_user.subscription_max_employees or 0
+        plan_name = current_user.subscription_plan_name or "Growth"
+        
+        from sqlalchemy import func
+        count_stmt = select(func.count(Employee.id)).where(Employee.company_id == current_user.company_id)
+        current_emp_count = (await db.execute(count_stmt)).scalar() or 0
+        
+        # New employees in this upload not already in DB
+        new_aadhaars = set(aadhaar_list) - set(existing_employees.keys())
+        total_projected = current_emp_count + len(new_aadhaars)
+        
+        # Collect details of new employees (name, row number, aadhaar) to display to user
+        new_employee_details = []
+        for index, row_data in df.iterrows():
+            row_dict = {str(k).strip(): v for k, v in row_data.to_dict().items()}
+            aadhaar_val = normalize_numeric_id(row_dict.get("Aadhaar number", ""), 12)
+            if aadhaar_val and aadhaar_val in new_aadhaars:
+                emp_name = excel_value_to_str(get_aliased_value(row_dict, "Name of employee", "")) or "Unnamed"
+                new_employee_details.append(f"{emp_name} (Row {index + 2}, Aadhaar: {aadhaar_val})")
+        
+        # Deduplicate while preserving order
+        seen_details = set()
+        unique_new_details = []
+        for item in new_employee_details:
+            if item not in seen_details:
+                seen_details.add(item)
+                unique_new_details.append(item)
+
+        sample_str = ", ".join(unique_new_details[:5])
+        if len(unique_new_details) > 5:
+            sample_str += f", and {len(unique_new_details) - 5} more"
+
+        new_names_clause = f" [{sample_str}]" if sample_str else ""
+
+        if plan_limit > 0 and (total_projected > plan_limit or (current_emp_count >= plan_limit and len(new_aadhaars) > 0)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Limit exceeded: {len(new_aadhaars)} new employee(s) found{new_names_clause}, "
+                    f"bringing total to {total_projected}, which exceeds your '{plan_name}' plan limit of {plan_limit} employees. "
+                    f"Please enable flexible overage rate in the Billing & Credits page to cover additional employees."
+                )
+            )
 
         employees_to_add = []
         for index, row_data in df.iterrows():
@@ -387,8 +435,10 @@ async def validate_excel_api(
         await db.rollback()
         raise
     except Exception as db_err:
-        logger.error(f"Error storing employees into database: {str(db_err)}")
         await db.rollback()
+        if isinstance(db_err, HTTPException):
+            raise db_err
+        logger.error(f"Error storing employees into database: {str(db_err)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Excel validated successfully, but failed to save records to database: {str(db_err)}"

@@ -24,6 +24,8 @@ def add_one_month(d: datetime) -> datetime:
 
 router = APIRouter()
 
+ADMIN_EMAILS = {"admin@peperlessboss.com", "nagannacti064.calactechnologies@gmail.com"}
+
 class PlanResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -138,7 +140,7 @@ async def update_config(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if current_user.email != "admin@peperlessboss.com":
+    if current_user.email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin access only."
@@ -187,7 +189,7 @@ async def create_plan(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if current_user.email != "admin@peperlessboss.com":
+    if current_user.email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin access only."
@@ -216,7 +218,7 @@ async def update_plan(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if current_user.email != "admin@peperlessboss.com":
+    if current_user.email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin access only."
@@ -248,7 +250,7 @@ async def delete_plan(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if current_user.email != "admin@peperlessboss.com":
+    if current_user.email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin access only."
@@ -311,6 +313,63 @@ async def get_user_subscription(
         is_docx_active=is_docx_active,
         company_employee_count=emp_count
     )
+
+
+class AdminAssignPlanRequest(BaseModel):
+    user_email: str
+    plan_name: str = "Growth"
+    max_employees: Optional[int] = None
+    duration_days: int = 365
+    has_docx_addon: bool = True
+
+
+@router.post("/admin/assign-plan")
+async def admin_assign_plan(
+    req: AdminAssignPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    from datetime import timedelta
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin access only."
+        )
+
+    stmt = select(User).where(User.email == req.user_email.strip())
+    res = await db.execute(stmt)
+    target_user = res.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail=f"User '{req.user_email}' not found")
+
+    plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.name.ilike(req.plan_name.strip()))
+    plan_res = await db.execute(plan_stmt)
+    plan = plan_res.scalars().first()
+
+    now = datetime.now(IST).replace(tzinfo=None)
+    max_emps = req.max_employees
+    if max_emps is None:
+        max_emps = plan.max_employees if (plan and plan.max_employees) else 50
+
+    target_user.subscription_plan_name = plan.name if plan else req.plan_name.strip()
+    target_user.subscription_max_employees = max_emps
+    target_user.subscription_end_date = now + timedelta(days=req.duration_days)
+    target_user.has_docx_addon = req.has_docx_addon
+    target_user.docx_addon_end_date = now + timedelta(days=req.duration_days) if req.has_docx_addon else None
+
+    await db.commit()
+    await db.refresh(target_user)
+
+    return {
+        "message": f"Successfully assigned '{target_user.subscription_plan_name}' plan to {target_user.email}",
+        "user_email": target_user.email,
+        "plan_name": target_user.subscription_plan_name,
+        "max_employees": target_user.subscription_max_employees,
+        "subscription_end_date": target_user.subscription_end_date,
+        "has_docx_addon": target_user.has_docx_addon,
+        "docx_addon_end_date": target_user.docx_addon_end_date,
+    }
+
 
 
 async def apply_successful_payment(user: User, transaction: PaymentTransaction, db: AsyncSession):

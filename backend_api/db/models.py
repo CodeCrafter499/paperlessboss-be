@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 from datetime import datetime, timezone, timedelta, date
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, BigInteger, CheckConstraint, Numeric, Text, Date
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, BigInteger, CheckConstraint, Numeric, Text, Date, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -127,6 +127,10 @@ class RefreshToken(Base):
 
 class Employee(Base):
     __tablename__ = "employees"
+    __table_args__ = (
+        UniqueConstraint("company_id", "aadhaar_number", name="uq_company_aadhaar"),
+        UniqueConstraint("company_id", "uan_esic_number", name="uq_company_uan_esic"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     company_id: Mapped[uuid.UUID] = mapped_column(
@@ -147,14 +151,13 @@ class Employee(Base):
     date_of_birth: Mapped[date] = mapped_column(Date, nullable=False)
     father_mother_name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    # Aadhaar Number - 12 digits
+    # Aadhaar Number - 12 digits (unique per company)
     aadhaar_number: Mapped[str] = mapped_column(
         String(12),
         CheckConstraint(
             "aadhaar_number ~ '^[0-9]{12}$'",
             name="chk_aadhaar_12_digits"
         ),
-        unique=True,
         nullable=False
     )
 
@@ -164,14 +167,13 @@ class Employee(Base):
         nullable=False
     )
 
-    # UAN / ESIC Number - 12 digits (matches the 12-digit Excel validator constraint)
+    # UAN / ESIC Number - 12 digits (unique per company)
     uan_esic_number: Mapped[Optional[str]] = mapped_column(
         String(12),
         CheckConstraint(
             "uan_esic_number ~ '^[0-9]{12}$'",
             name="chk_uan_esic_12_digits"
         ),
-        unique=True,
         nullable=True
     )
 
@@ -415,9 +417,3 @@ class ContactMessage(Base):
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(IST).replace(tzinfo=None), nullable=False)
-
-
-
-
-
-
