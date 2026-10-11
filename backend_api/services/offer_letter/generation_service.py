@@ -66,7 +66,7 @@ async def generate_letters_for_company(
 
     if len(employees) > user.subscription_max_employees:
         raise ValueError(
-            f"Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please upgrade your plan in Billing & Subscription."
+            f"Limit exceeded: Your company has {len(employees)} employees, which exceeds your '{user.subscription_plan_name or 'Current'}' plan limit of {user.subscription_max_employees} employees. Please enable flexible overage rate in the Billing & Credits page to cover additional employees."
         )
     
     # Fetch signatory for signature / stamp inclusion

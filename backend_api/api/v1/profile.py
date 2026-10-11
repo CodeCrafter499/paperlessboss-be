@@ -193,10 +193,13 @@ async def get_active_letterhead_pdf(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
+    import logging
     from sqlalchemy import select
     from fastapi.responses import Response
     from db.models import CompanyLetterhead
     from services.offer_letter.letterhead import download_from_supabase, LETTERHEAD_PDF_PATH
+
+    logger = logging.getLogger(__name__)
 
     if not current_user.company_id:
         raise HTTPException(status_code=400, detail="User is not associated with a company")
@@ -214,6 +217,10 @@ async def get_active_letterhead_pdf(
             return Response(content=pdf_bytes, media_type="application/pdf")
         except Exception as e:
             logger.warning("Could not load active letterhead file: %s", e)
+            from services.offer_letter.letterhead import LETTERHEAD_PDF_PATH
+            if LETTERHEAD_PDF_PATH.is_file():
+                with open(LETTERHEAD_PDF_PATH, "rb") as f:
+                    return Response(content=f.read(), media_type="application/pdf")
             raise HTTPException(status_code=404, detail="Active letterhead file is not available in storage. Please upload a new version.")
 
     raise HTTPException(status_code=404, detail="No active letterhead found. Please upload a letterhead template.")
@@ -226,11 +233,14 @@ async def get_letterhead_pdf(
     authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db_session)
 ):
+    import logging
     from sqlalchemy import select
     from fastapi.responses import Response
     from db.models import CompanyLetterhead, User
-    from services.offer_letter.letterhead import download_from_supabase
+    from services.offer_letter.letterhead import download_from_supabase, LETTERHEAD_PDF_PATH
     from core.security import verify_access_token
+
+    logger = logging.getLogger(__name__)
 
     token_str = None
     if authorization and authorization.startswith("Bearer "):
@@ -269,5 +279,8 @@ async def get_letterhead_pdf(
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
         logger.warning("Could not load letterhead file %s: %s", letterhead.storage_file_location, e)
+        if LETTERHEAD_PDF_PATH.is_file():
+            with open(LETTERHEAD_PDF_PATH, "rb") as f:
+                return Response(content=f.read(), media_type="application/pdf")
         raise HTTPException(status_code=404, detail=f"Letterhead file '{letterhead.filename}' not found in storage. Please upload a new version.")
 

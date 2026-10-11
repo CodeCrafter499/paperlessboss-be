@@ -21,6 +21,7 @@ from schemas.offer_letter import (
 )
 from services.offer_letter.generation_service import (
     generate_letters_background_task,
+    generate_letters_for_company,
     get_company_letter_status,
     resolve_download_path,
 )
@@ -190,106 +191,138 @@ class DownloadOfferZipRequest(_BaseModel):
     employee_ids: Optional[list[int]] = None
 
 
-@router.post("/download-zip")
-async def download_offer_letters_zip(
-    payload: Optional[DownloadOfferZipRequest] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+async def _download_zip_impl(
+    format: str,
+    employee_ids_list: Optional[list[int]],
+    current_user: User,
+    db: AsyncSession,
 ):
+    import io
+    import zipfile
+    from fastapi.responses import Response
+    from services.offer_letter.storage import letter_paths
+    from datetime import datetime
+    from db.models import IST, GeneratedLetterLog
+    from sqlalchemy import update
+
     if not current_user.company_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Your user account is not linked to any company profile."
+            detail="Your account is not associated with a company profile."
         )
 
-    from sqlalchemy import select, update
-    from db.models import Employee, Company, GeneratedLetterLog, IST
-    from services.offer_letter.storage import letter_paths
-    import io
-    import zipfile
-    import re
-    from datetime import datetime
-    from starlette.responses import StreamingResponse
-
-    req = payload or DownloadOfferZipRequest()
-    fmt = (req.format or "pdf").lower()
     now = datetime.now(IST).replace(tzinfo=None)
-    is_docx_active = bool(
-        current_user.has_docx_addon and current_user.docx_addon_end_date and current_user.docx_addon_end_date >= now
+    is_plan_active = bool(
+        current_user.subscription_end_date and current_user.subscription_end_date >= now
     )
+    if not is_plan_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription plan is inactive or expired. Please subscribe to a plan in Billing & Credits."
+        )
 
-    if fmt in ("docx", "both") and not is_docx_active:
-        if fmt == "docx":
+    # DOCX add-on validation
+    if format in ("docx", "both"):
+        is_docx_active = bool(
+            current_user.has_docx_addon and current_user.docx_addon_end_date and current_user.docx_addon_end_date >= now
+        )
+        if not is_docx_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="DOCX format download requires the Editable DOCX Add-on (₹299/month)."
+                detail="DOCX format download requires the Editable DOCX Add-on (₹299/month). Please activate the add-on in Billing & Credits."
             )
-        fmt = "pdf"
 
-    stmt = select(Employee).where(Employee.company_id == current_user.company_id)
-    if req.employee_ids and len(req.employee_ids) > 0:
-        stmt = stmt.where(Employee.id.in_(req.employee_ids))
-
-    res = await db.execute(stmt)
-    employees = res.scalars().all()
-
+    company_id = current_user.company_id
+    employees = await get_employees_by_company(db, company_id)
     if not employees:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No employee records found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No employees found for this company."
+        )
 
-    comp = await db.get(Company, current_user.company_id)
-    pan = (comp.pan if comp and comp.pan else "COMPANY").upper().strip()
-    pan = re.sub(r'[^A-Z0-9]', '', pan) or "COMPANY"
-    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-    zip_filename = f"{pan}_{timestamp_str}_Appointment_Letters.zip"
+    if employee_ids_list:
+        parsed_ids = set(employee_ids_list)
+        employees = [e for e in employees if e.id in parsed_ids]
+        if not employees:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No matching employees found for the requested batch."
+            )
 
+    # Check if files exist on disk; if not generated yet, generate them now
+    ready_count = 0
+    for emp in employees:
+        p_path, d_path = letter_paths(company_id, emp.id)
+        if p_path.is_file():
+            ready_count += 1
+
+    if ready_count < len(employees):
+        logger.info("Generating missing letters before compiling ZIP...")
+        await generate_letters_for_company(db, company_id, current_user.id)
+
+    # Compile zip archive in-memory
     zip_buffer = io.BytesIO()
-    emp_ids_added = []
+    files_added = 0
+    seen_arcnames = set()
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for emp in employees:
-            pdf_p, docx_p = letter_paths(current_user.company_id, emp.id)
-            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', (emp.employee_name or f"Employee_{emp.id}").strip())
+            pdf_path, docx_path = letter_paths(company_id, emp.id)
+            emp_safe = _sanitize_filename(emp.employee_name)
+            emp_unique_tag = f"_{emp.lin_number}" if emp.lin_number else f"_{emp.id}"
 
-            added = False
-            if fmt in ("pdf", "both") and pdf_p.is_file():
-                zf.write(pdf_p, arcname=f"Appointment_Letter_{safe_name}.pdf")
-                added = True
-            if fmt in ("docx", "both") and is_docx_active and docx_p.is_file():
-                zf.write(docx_p, arcname=f"Appointment_Letter_{safe_name}.docx")
-                added = True
+            if format in ("pdf", "both") and pdf_path.is_file():
+                arc = f"Appointment_Letter_{emp_safe}.pdf"
+                if arc in seen_arcnames:
+                    arc = f"Appointment_Letter_{emp_safe}{emp_unique_tag}.pdf"
+                counter = 1
+                base_name = arc[:-4]
+                while arc in seen_arcnames:
+                    arc = f"{base_name}_{counter}.pdf"
+                    counter += 1
+                seen_arcnames.add(arc)
+                zf.write(pdf_path, arcname=arc)
+                files_added += 1
 
-            if added:
-                emp_ids_added.append(emp.id)
+            if format in ("docx", "both") and docx_path.is_file():
+                arc = f"Appointment_Letter_{emp_safe}.docx"
+                if arc in seen_arcnames:
+                    arc = f"Appointment_Letter_{emp_safe}{emp_unique_tag}.docx"
+                counter = 1
+                base_name = arc[:-5]
+                while arc in seen_arcnames:
+                    arc = f"{base_name}_{counter}.docx"
+                    counter += 1
+                seen_arcnames.add(arc)
+                zf.write(docx_path, arcname=arc)
+                files_added += 1
 
-    if not emp_ids_added:
+    if files_added == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No generated letters found on server for these employees."
+            detail="No letters could be packaged into ZIP. Please try generating them first."
         )
 
-    # Mark as downloaded in logs
-    if emp_ids_added:
-        try:
-            up_stmt = (
-                update(GeneratedLetterLog)
-                .where(
-                    GeneratedLetterLog.employee_id.in_(emp_ids_added),
-                    GeneratedLetterLog.user_id == current_user.id
-                )
-                .values(
-                    downloaded=True,
-                    downloaded_at=now,
-                    downloaded_by=current_user.id
-                )
+    # Update download status in audit logs
+    try:
+        await db.execute(
+            update(GeneratedLetterLog)
+            .where(GeneratedLetterLog.company_id == company_id, GeneratedLetterLog.user_id == current_user.id)
+            .values(
+                downloaded=True,
+                downloaded_at=now,
+                downloaded_by=current_user.id
             )
-            await db.execute(up_stmt)
-            await db.commit()
-        except Exception as log_err:
-            logger.error(f"Failed to update download logs: {log_err}")
+        )
+        await db.commit()
+    except Exception as log_err:
+        logger.warning("Failed to update download logs: %s", log_err)
 
     zip_buffer.seek(0)
-    return StreamingResponse(
-        zip_buffer,
+    zip_filename = f"Appointment_Letters_{format.upper()}_{now.strftime('%d_%b_%Y')}.zip"
+
+    return Response(
+        content=zip_buffer.getvalue(),
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{zip_filename}"',
@@ -298,6 +331,28 @@ async def download_offer_letters_zip(
     )
 
 
+@router.get("/download-zip")
+async def download_offer_letters_zip_get(
+    format: str = "pdf",  # "pdf", "docx", or "both"
+    employee_ids: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    parsed_ids = None
+    if employee_ids and employee_ids.strip():
+        parsed_ids = [int(x.strip()) for x in employee_ids.split(",") if x.strip().isdigit()]
+    return await _download_zip_impl(format, parsed_ids, current_user, db)
+
+
+@router.post("/download-zip")
+async def download_offer_letters_zip_post(
+    payload: Optional[DownloadOfferZipRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    fmt = payload.format if payload and payload.format else "pdf"
+    emp_ids = payload.employee_ids if payload else None
+    return await _download_zip_impl(fmt, emp_ids, current_user, db)
 async def _download_letter(db: AsyncSession, employee_id: int, fmt: str, current_user: User) -> FileResponse:
     try:
         file_path, employee_name = await resolve_download_path(db, employee_id, fmt)

@@ -3,13 +3,17 @@ import ssl
 import urllib.parse
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-dotenv_path = os.path.join(BASE_DIR, '.env')
-load_dotenv(dotenv_path)
+# Locate and load .env file
+for _parent in [Path(__file__).resolve().parents[2], Path(__file__).resolve().parents[1]]:
+    _env_file = _parent / '.env'
+    if _env_file.is_file():
+        load_dotenv(_env_file)
+        break
 
 class DatabaseManager:
     

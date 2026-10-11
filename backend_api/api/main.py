@@ -3,13 +3,14 @@ import asyncio
 import logging
 from pathlib import Path
 
-# Add project root and backend_api directory to sys.path to resolve imports cleanly in development
-backend_api_dir = Path(__file__).resolve().parent.parent
-project_root = backend_api_dir.parent
+# Add project root and backend_api directory to sys.path to resolve imports cleanly
+_current_file = Path(__file__).resolve()
+_backend_api_dir = _current_file.parent.parent
+_root_dir = _backend_api_dir.parent
 
-for p in (str(project_root), str(backend_api_dir)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+for _p in [str(_backend_api_dir), str(_root_dir)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,17 @@ async def run_db_sync(db_manager):
                 ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;
             """))
 
+            await conn.execute(text("ALTER TABLE storage_mapping ALTER COLUMN employee_id DROP NOT NULL;"))
+            await conn.execute(text("ALTER TABLE employees ALTER COLUMN basic_pay TYPE VARCHAR(255) USING basic_pay::varchar;"))
+            await conn.execute(text("ALTER TABLE employees ALTER COLUMN dearness_allowance TYPE VARCHAR(255) USING dearness_allowance::varchar;"))
+            await conn.execute(text("ALTER TABLE employees ALTER COLUMN other_allowance TYPE VARCHAR(255) USING other_allowance::varchar;"))
+            await conn.execute(text("ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_aadhaar_number_key;"))
+            await conn.execute(text("ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_uan_esic_number_key;"))
+            await conn.execute(text("ALTER TABLE employees DROP CONSTRAINT IF EXISTS uq_company_aadhaar;"))
+            await conn.execute(text("ALTER TABLE employees ADD CONSTRAINT uq_company_aadhaar UNIQUE (company_id, aadhaar_number);"))
+            await conn.execute(text("ALTER TABLE employees DROP CONSTRAINT IF EXISTS uq_company_uan_esic;"))
+            await conn.execute(text("ALTER TABLE employees ADD CONSTRAINT uq_company_uan_esic UNIQUE (company_id, uan_esic_number);"))
+
         # 3. Seed billing settings and plans if needed
         try:
             async with db_manager.engine.begin() as conn:
@@ -133,7 +145,6 @@ async def run_db_sync(db_manager):
                         )
         except Exception as seed_err:
             logger.debug("Seed note: %s", seed_err)
-
         print(">>> Database initialized and tables synced successfully!")
     except Exception as e:
         logger.debug("Schema sync completed: %s", e)
